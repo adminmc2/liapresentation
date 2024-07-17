@@ -11,8 +11,8 @@ export const metadata = {
     ? new URL(`https://${process.env.VERCEL_URL}`)
     : undefined,
   title: {
-    default: 'RainAI',
-    template: `%s - RainAI Chatbot`
+    default: 'Chatbot Next.js',
+    template: `%s - Chatbot Next.js Chatbot`
   },
   description: 'An AI-powered chatbot template built with Next.js and Vercel.',
   icons: {

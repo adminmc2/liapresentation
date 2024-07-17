@@ -14,7 +14,7 @@ export function Header() {
         <CloudRainWind className="text-primary" />
       </div>
 
-      <span className="font-bold text-primary">Should I go outside today?</span>
+      <span className="font-bold text-primary">Chatbot Next.js</span>
 
       <div className='flex items-center justify-end'>
         <a

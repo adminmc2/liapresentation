@@ -5,7 +5,7 @@ export function EmptyScreen() {
     <div className="mx-auto max-w-2xl px-4">
       <div className="flex flex-col gap-2 rounded-lg border bg-background p-8">
         <h1 className="text-lg font-semibold">
-          Welcome to RainAI!
+          Welcome to Chatbot Next.js!
         </h1>
         <p className="leading-normal text-muted-foreground">
           This is an open source AI chatbot built with{' '}
@@ -20,7 +20,7 @@ export function EmptyScreen() {
           .
         </p>
         <p className="leading-normal text-muted-foreground">
-          Now you can check the weather in your city before leaving home!
+          Make the most of all the power of ChatGPT Turbo!
         </p>
       </div>
     </div>
