@@ -1,6 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import axios from 'axios';
 
+// Definir interfaces para los tipos
+interface VoiceSettings {
+  stability?: number;
+  similarity_boost?: number;
+  style?: number;
+}
+
+interface ElevenLabsParams {
+  text: string;
+  model_id: string;
+  voice_settings: VoiceSettings;
+}
+
 /**
  * Manejador para la ruta POST /api/elevenlabs
  * Convierte texto a voz utilizando ElevenLabs
@@ -35,21 +48,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Procesar el texto para mejorar la detección del idioma español
+    let processedText = text;
+    // Usar formato similar a un comentario HTML para indicar el idioma
+    if (!processedText.includes("<!-- español -->")) {
+      processedText = "<!-- español --> " + processedText;
+    }
+
     // Configurar parámetros
-    const params: any = {
-      text: text,
-      model_id: modelId || 'eleven_monolingual_v1'
+    const params: ElevenLabsParams = {
+      text: processedText,
+      model_id: modelId || 'eleven_turbo_v2_5', // Intentar con el modelo más reciente
+      voice_settings: {}
     };
 
     // Añadir parámetros opcionales si están presentes
-    const voice_settings: any = {};
-    if (stability !== undefined) voice_settings.stability = stability;
-    if (similarityBoost !== undefined) voice_settings.similarity_boost = similarityBoost;
-    if (style !== undefined) voice_settings.style = style;
-    
-    if (Object.keys(voice_settings).length > 0) {
-      params.voice_settings = voice_settings;
-    }
+    if (stability !== undefined) params.voice_settings.stability = stability;
+    if (similarityBoost !== undefined) params.voice_settings.similarity_boost = similarityBoost;
+    if (style !== undefined) params.voice_settings.style = style;
 
     // Realizar la solicitud a ElevenLabs
     const response = await axios({

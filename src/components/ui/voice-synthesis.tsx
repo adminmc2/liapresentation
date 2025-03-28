@@ -21,7 +21,7 @@ interface VoiceSynthesisProps {
  */
 export const VoiceSynthesis: React.FC<VoiceSynthesisProps> = ({
   text,
-  voiceId = 'Z5PwKHOHMZNAqBYshx3N', // ID por defecto de ElevenLabs
+  voiceId = 'gD1IexrzCvsXPHUuT0s3', // ID por defecto de ElevenLabs
   autoPlay = false,
   stability = 0.5,
   similarityBoost = 0.75,
