@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import React, { useState, useEffect, useRef } from 'react';
+import { assemblyAIService } from '@/lib/services/assemblyai-service';
 import { scriptManager } from '@/lib/services/script-manager';
 
 interface VoiceRecognitionProps {
@@ -14,31 +14,31 @@ export const VoiceRecognition: React.FC<VoiceRecognitionProps> = ({
   onSegmentMatch 
 }) => {
   const [isListening, setIsListening] = useState(false);
-  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
-  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
-  const [transcript, setTranscript] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [transcript, setTranscript] = useState('');
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   // Inicializar el grabador de audio
   useEffect(() => {
-    let chunks: BlobPart[] = [];
-    
     const setupMediaRecorder = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const recorder = new MediaRecorder(stream);
         
         recorder.ondataavailable = (e) => {
-          chunks.push(e.data);
+          if (e.data.size > 0) {
+            audioChunksRef.current.push(e.data);
+          }
         };
         
-        recorder.onstop = () => {
-          const blob = new Blob(chunks, { type: 'audio/webm' });
-          setAudioBlob(blob);
-          chunks = [];
+        recorder.onstop = async () => {
+          const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          audioChunksRef.current = [];
+          await processAudio(blob);
         };
         
-        setMediaRecorder(recorder);
+        mediaRecorderRef.current = recorder;
       } catch (err) {
         console.error('Error al acceder al micrófono:', err);
       }
@@ -47,49 +47,34 @@ export const VoiceRecognition: React.FC<VoiceRecognitionProps> = ({
     setupMediaRecorder();
     
     return () => {
-      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
       }
     };
   }, []);
 
   // Procesar el audio cuando se detiene la grabación
-  useEffect(() => {
-    if (audioBlob && !isListening) {
-      processAudio(audioBlob);
-    }
-  }, [audioBlob, isListening]);
-
-  // Función para procesar el audio con AssemblyAI
   const processAudio = async (blob: Blob) => {
     setIsProcessing(true);
     
-    // Simulamos el procesamiento con AssemblyAI
-    // En una implementación real, enviaríamos el blob a la API de AssemblyAI
     try {
-      // Simulación de una respuesta de API de reconocimiento de voz
-      // En un entorno real, aquí realizaríamos la llamada a AssemblyAI API
+      // Usar el servicio de AssemblyAI para transcribir
+      const result = await assemblyAIService.transcribeAudio(blob);
       
-      // Simulamos una demora para simular el procesamiento
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Para nuestro MVP, simplemente usaremos un texto predefinido basado en el segmento actual
-      const currentSegment = scriptManager.getCurrentSegment();
-      
-      if (currentSegment && currentSegment.speaker === 'Armando') {
-        const recognizedText = currentSegment.text;
-        setTranscript(recognizedText);
+      if (result.success && result.text) {
+        setTranscript(result.text);
         
         if (onResult) {
-          onResult(recognizedText);
+          onResult(result.text);
         }
         
-        // Buscar coincidencia con otros segmentos basado en palabras clave
-        const match = scriptManager.findSegmentByKeywords(recognizedText);
+        // Buscar coincidencia con segmentos basado en palabras clave
+        const match = scriptManager.findSegmentByKeywords(result.text);
         if (match && onSegmentMatch) {
           onSegmentMatch(match.segment.id, match.confidence);
         }
       } else {
+        console.error('Error al transcribir:', result.error);
         setTranscript('No se pudo reconocer el audio. Intente de nuevo.');
       }
     } catch (error) {
@@ -102,14 +87,15 @@ export const VoiceRecognition: React.FC<VoiceRecognitionProps> = ({
 
   // Iniciar/detener la grabación
   const toggleListening = () => {
-    if (!mediaRecorder) return;
+    if (!mediaRecorderRef.current) return;
     
     if (isListening) {
-      mediaRecorder.stop();
+      mediaRecorderRef.current.stop();
       setIsListening(false);
     } else {
       setTranscript('');
-      mediaRecorder.start();
+      audioChunksRef.current = [];
+      mediaRecorderRef.current.start();
       setIsListening(true);
     }
   };
@@ -118,7 +104,7 @@ export const VoiceRecognition: React.FC<VoiceRecognitionProps> = ({
     <div className="flex flex-col items-center">
       <button
         onClick={toggleListening}
-        disabled={!mediaRecorder || isProcessing}
+        disabled={!mediaRecorderRef.current || isProcessing}
         className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${
           isListening
             ? 'bg-red-500 hover:bg-red-600'
