@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { scriptManager, ScriptState } from '@/lib/services/script-manager';
+import { scriptManager } from '@/lib/services/enhanced-script-manager';
 import { ScriptSegment } from '@/lib/data/script-data';
 
 export const ScriptTracker: React.FC = () => {

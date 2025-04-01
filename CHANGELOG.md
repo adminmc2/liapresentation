@@ -320,3 +320,22 @@ Considerar la posibilidad de almacenar temporalmente las transcripciones para ev
 Conclusión
 La solución implementada resuelve efectivamente el problema de manejo de blobs de audio pequeños o inválidos, permitiendo un flujo robusto tanto para casos de prueba como para uso real. La verificación de tamaño actúa como un filtro inteligente que mejora la experiencia del usuario y la eficiencia del sistema.
 El problema central (error 422 con blobs pequeños) se abordó mediante la implementación de una verificación previa al envío a la API, lo que permite una degradación elegante del servicio en casos donde el audio no tiene el tamaño o formato adecuado.
+
+# Changelog - [Fecha actual]
+
+## Componente Layout
+
+### Modificaciones
+- Actualización de logos: Cambiado a SVG específicos del proyecto (`logoemc2.svg` y `logohablandis.svg`)
+- Actualización de branding: Cambiado título a "Comunicar con GracIA" y subtítulo a "Herramientas al servicio del profesorado ELE"
+- Actualización del pie de página: Referencia actualizada al proyecto GracIA y desarrolladores
+- Corrección de presentación visual: Implementada visualización de dos logos lado a lado
+
+### Correcciones de Errores
+- Resuelto error de TypeScript relacionado con propiedades no reconocidas en `ToastOptions` de Sonner
+- Simplificación de configuración del componente Toaster para evitar conflictos de tipos
+- Implementación de la versión compatible con la actual API de Sonner
+
+### Notas Técnicas
+- Si se necesitan estilos personalizados para las notificaciones toast, considerar implementar CSS global o usar la nueva API de estilos de Sonner
+- Los logos SVG deben tener un tamaño base de 80x80px para una visualización óptima

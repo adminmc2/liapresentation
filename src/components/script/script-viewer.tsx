@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { ScriptSegment } from '@/lib/data/script-data';
-import { scriptManager, ScriptState } from '@/lib/services/script-manager';
+import { scriptManager } from '@/lib/services/enhanced-script-manager';
 
 interface ScriptViewerProps {
   onSegmentChange?: (segment: ScriptSegment) => void;

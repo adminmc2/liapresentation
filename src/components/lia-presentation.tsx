@@ -6,7 +6,7 @@ import { ScriptTracker } from './script/script-tracker';
 import { VoiceRecognition } from '@/components/ui/voice-recognition';
 import { VoiceSynthesis } from '@/components/ui/voice-synthesis';
 import { Visualization } from '@/components/ui/visualization';
-import { scriptManager } from '@/lib/services/script-manager';
+import { scriptManager } from '@/lib/services/enhanced-script-manager';
 import { ScriptSegment } from '@/lib/data/script-data';
 
 export const LIAPresentation: React.FC = () => {

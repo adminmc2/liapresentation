@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { assemblyAIService } from '@/lib/services/assemblyai-service';
-import { scriptManager } from '@/lib/services/script-manager';
+import { scriptManager } from '@/lib/services/enhanced-script-manager';
 
 interface VoiceRecognitionProps {
   onResult?: (text: string) => void;

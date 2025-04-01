@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { ElevenLabsService } from '@/lib/services/elevenlabs-service';
+import { EnhancedElevenLabsService as ElevenLabsService } from '@/lib/services/enhanced-elevenlabs-service';
 
 interface VoiceSynthesisProps {
   text: string;
