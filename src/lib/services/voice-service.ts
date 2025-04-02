@@ -1,4 +1,3 @@
-// src/lib/services/voice-service.ts
 import axios from 'axios';
 
 // Interfaz para las opciones de síntesis de voz
@@ -16,7 +15,7 @@ interface SynthesisOptions {
 interface VoiceEventHandlers {
   onStart?: () => void;
   onEnd?: () => void;
-  onError?: (error: any) => void;
+  onError?: (error: string) => void; // Cambio realizado aquí
   onProgress?: (progress: number) => void;
 }
 
@@ -45,7 +44,8 @@ class VoiceService {
       });
       
       this.audioElement.addEventListener('error', (e) => {
-        if (this.eventHandlers.onError) this.eventHandlers.onError(e);
+        const errorMsg = 'Error al reproducir el audio';
+        if (this.eventHandlers.onError) this.eventHandlers.onError(errorMsg); // Cambio realizado aquí
       });
       
       this.audioElement.addEventListener('timeupdate', () => {
@@ -141,8 +141,9 @@ class VoiceService {
       
     } catch (error) {
       console.error('Error en la síntesis de voz:', error);
+      const errorMsg = 'Error en la síntesis de voz';
       if (this.eventHandlers.onError) {
-        this.eventHandlers.onError(error);
+        this.eventHandlers.onError(errorMsg); // Cambio realizado aquí
       }
     }
   }

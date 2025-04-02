@@ -13,8 +13,8 @@ export interface ScriptSegment {
   isCompleted?: boolean;  // Si ya se ha completado este segmento
 }
 
-// Guión completo basado en el proporcionado
-export const liaScript: ScriptSegment[] = [
+// Guión base (primeras tres escenas)
+export const initialLiaScript: ScriptSegment[] = [
   {
     id: 'escena1-lia-saludo',
     scene: 1,
@@ -90,5 +90,24 @@ export const liaScript: ScriptSegment[] = [
   }
 ];
 
-// Ejemplo de guión básico para demostración en desarrollo
+// Función que intenta cargar el guión desde localStorage (solo en el cliente)
+const loadScriptFromStorage = (): ScriptSegment[] => {
+  if (typeof window !== 'undefined') {
+    try {
+      const savedScript = localStorage.getItem('liaScript');
+      if (savedScript) {
+        return JSON.parse(savedScript);
+      }
+    } catch (e) {
+      console.error('Error al cargar el guión desde localStorage:', e);
+    }
+  }
+  return initialLiaScript;
+};
+
+// Guión principal (se actualizará dinámicamente)
+export const liaScript: ScriptSegment[] = 
+  typeof window === 'undefined' ? initialLiaScript : loadScriptFromStorage();
+
+// Para compatibilidad con código existente
 export const demoScript: ScriptSegment[] = liaScript;

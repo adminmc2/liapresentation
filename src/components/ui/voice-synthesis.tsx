@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import { toast } from 'sonner';
+import { Play, Pause, Volume2, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
 import { EnhancedElevenLabsService as ElevenLabsService } from '@/lib/services/enhanced-elevenlabs-service';
 
 interface VoiceSynthesisProps {
@@ -11,13 +13,17 @@ interface VoiceSynthesisProps {
   similarityBoost?: number;
   style?: number;
   showControls?: boolean;
+  buttonSize?: 'sm' | 'md' | 'lg';
+  variant?: 'default' | 'minimal' | 'text';
+  showError?: boolean;
+  className?: string;
   onPlayStart?: () => void;
   onPlayEnd?: () => void;
   onError?: (error: string) => void;
 }
 
 /**
- * Componente para síntesis de voz utilizando ElevenLabs
+ * Componente mejorado para síntesis de voz utilizando ElevenLabs
  */
 export const VoiceSynthesis: React.FC<VoiceSynthesisProps> = ({
   text,
@@ -27,15 +33,44 @@ export const VoiceSynthesis: React.FC<VoiceSynthesisProps> = ({
   similarityBoost = 0.75,
   style = 0,
   showControls = true,
+  buttonSize = 'md',
+  variant = 'default',
+  showError = true,
+  className = '',
   onPlayStart,
   onPlayEnd,
   onError
 }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [audioProgress, setAudioProgress] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+
+  // Tamaños de botón según la prop
+  const buttonSizeClass = {
+    sm: 'w-8 h-8',
+    md: 'w-10 h-10',
+    lg: 'w-12 h-12'
+  }[buttonSize];
+  
+  const iconSizeClass = {
+    sm: 'h-4 w-4',
+    md: 'h-5 w-5',
+    lg: 'h-6 w-6'
+  }[buttonSize];
+  
+  // Determinar clases según la variante
+  const getButtonClasses = () => {
+    if (variant === 'minimal') {
+      return `${buttonSizeClass} flex items-center justify-center rounded-full text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed`;
+    } else if (variant === 'text') {
+      return `flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed`;
+    }
+    return `${buttonSizeClass} flex items-center justify-center rounded-full shadow-sm text-white transition-colors hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed`;
+  };
 
   // Limpiar el URL del objeto cuando el componente se desmonte
   useEffect(() => {
@@ -53,22 +88,91 @@ export const VoiceSynthesis: React.FC<VoiceSynthesisProps> = ({
     }
   }, [text, voiceId, autoPlay]);
 
+  // Manejar eventos de audio
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    
+    const onPlay = () => {
+      setIsPlaying(true);
+      setIsPaused(false);
+      if (onPlayStart) onPlayStart();
+    };
+    
+    const onPause = () => {
+      setIsPlaying(false);
+      setIsPaused(true);
+    };
+    
+    const onEnded = () => {
+      setIsPlaying(false);
+      setIsPaused(false);
+      setAudioProgress(0);
+      if (onPlayEnd) onPlayEnd();
+    };
+    
+    const onTimeUpdate = () => {
+      if (audio.duration) {
+        setAudioProgress((audio.currentTime / audio.duration) * 100);
+      }
+    };
+    
+    // Función renombrada para evitar conflicto
+    const handleAudioError = () => {
+      const errorMsg = 'Error al reproducir el audio';
+      setError(errorMsg);
+      setIsPlaying(false);
+      if (onError) onError(errorMsg);
+    };
+    
+    // Añadir event listeners
+    audio.addEventListener('play', onPlay);
+    audio.addEventListener('pause', onPause);
+    audio.addEventListener('ended', onEnded);
+    audio.addEventListener('timeupdate', onTimeUpdate);
+    audio.addEventListener('error', handleAudioError);
+    
+    // Limpiar event listeners
+    return () => {
+      audio.removeEventListener('play', onPlay);
+      audio.removeEventListener('pause', onPause);
+      audio.removeEventListener('ended', onEnded);
+      audio.removeEventListener('timeupdate', onTimeUpdate);
+      audio.removeEventListener('error', handleAudioError);
+    };
+  }, [onPlayStart, onPlayEnd, onError]);
+
   // Función para sintetizar el texto y reproducirlo
   const synthesizeAndPlay = async () => {
-    if (!text.trim()) return;
+    if (!text.trim()) {
+      const errorMsg = 'No hay texto para sintetizar';
+      setError(errorMsg);
+      if (onError) onError(errorMsg);
+      return;
+    }
     
     setIsLoading(true);
     setError(null);
     
     try {
+      // Notificación simple sin usar dismiss
+      toast.info('Generando audio...', {
+        duration: 0 // Infinito, lo quitaremos manualmente con un success
+      });
+      
       // Usando el servicio centralizado de ElevenLabs
       const audioBlob = await ElevenLabsService.synthesizeSpeech({
         text,
         voiceId,
         stability,
         similarityBoost,
-        style
+        style,
+        useBreathingMarkers: true,
+        useCache: true
       });
+      
+      // En lugar de dismiss, simplemente mostramos un nuevo toast de éxito
+      toast.success('Audio generado');
       
       // Crear URL para el blob de audio
       const url = URL.createObjectURL(audioBlob);
@@ -77,32 +181,21 @@ export const VoiceSynthesis: React.FC<VoiceSynthesisProps> = ({
         URL.revokeObjectURL(audioUrl);
       }
       
+      setAudioProgress(0);
       setAudioUrl(url);
       
       if (audioRef.current) {
         audioRef.current.src = url;
-        audioRef.current.onplay = () => {
-          setIsPlaying(true);
-          if (onPlayStart) onPlayStart();
-        };
         
-        audioRef.current.onended = () => {
-          setIsPlaying(false);
-          if (onPlayEnd) onPlayEnd();
-        };
-        
-        audioRef.current.onerror = (e) => {
-          const errorMsg = 'Error al reproducir el audio';
-          setError(errorMsg);
-          if (onError) onError(errorMsg);
-        };
-        
-        audioRef.current.play().catch(err => {
+        try {
+          await audioRef.current.play();
+        } catch (err) {
           console.error('Error al reproducir audio:', err);
           const errorMsg = 'Error al reproducir audio. Compruebe que su navegador permite la reproducción automática.';
           setError(errorMsg);
+          toast.error(errorMsg);
           if (onError) onError(errorMsg);
-        });
+        }
       }
     } catch (err) {
       console.error('Error en síntesis de voz:', err);
@@ -119,6 +212,7 @@ export const VoiceSynthesis: React.FC<VoiceSynthesisProps> = ({
       }
       
       setError(errorMsg);
+      toast.error(errorMsg);
       if (onError) onError(errorMsg);
     } finally {
       setIsLoading(false);
@@ -127,9 +221,10 @@ export const VoiceSynthesis: React.FC<VoiceSynthesisProps> = ({
 
   const handlePlay = () => {
     if (audioRef.current && audioUrl) {
-      setIsPlaying(true);
-      if (onPlayStart) onPlayStart();
-      audioRef.current.play();
+      audioRef.current.play().catch(err => {
+        console.error('Error al reproducir audio:', err);
+        toast.error('Error al reproducir audio');
+      });
     } else {
       synthesizeAndPlay();
     }
@@ -138,80 +233,143 @@ export const VoiceSynthesis: React.FC<VoiceSynthesisProps> = ({
   const handlePause = () => {
     if (audioRef.current) {
       audioRef.current.pause();
-      setIsPlaying(false);
     }
+  };
+  
+  const handleRegenerate = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
+    
+    // Eliminar el URL anterior
+    if (audioUrl) {
+      URL.revokeObjectURL(audioUrl);
+      setAudioUrl(null);
+    }
+    
+    synthesizeAndPlay();
   };
 
   // Si no queremos mostrar controles, solo renderizamos el elemento de audio
   if (!showControls) {
-    return (
-      <audio 
-        ref={audioRef} 
-        onPlay={() => {
-          setIsPlaying(true);
-          if (onPlayStart) onPlayStart();
-        }}
-        onPause={() => setIsPlaying(false)}
-        onEnded={() => {
-          setIsPlaying(false);
-          if (onPlayEnd) onPlayEnd();
-        }}
-        hidden
-      />
-    );
+    return <audio ref={audioRef} hidden />;
   }
+  
+  // Renderizado de botones basado en variante
+  const renderButton = () => {
+    const baseClasses = getButtonClasses();
+    
+    if (isPlaying) {
+      return (
+        <button
+          onClick={handlePause}
+          disabled={isLoading || !audioUrl}
+          className={`${baseClasses} ${variant !== 'text' ? 'bg-red-500 hover:bg-red-600' : 'text-red-500 hover:bg-red-50'}`}
+          aria-label="Pausar audio"
+          title="Pausar audio"
+        >
+          {variant === 'text' && "Pausar"}
+          <Pause className={iconSizeClass} />
+        </button>
+      );
+    }
+    
+    if (isPaused && audioUrl) {
+      return (
+        <button
+          onClick={handlePlay}
+          disabled={isLoading}
+          className={`${baseClasses} ${variant !== 'text' ? 'bg-green-500 hover:bg-green-600' : 'text-green-500 hover:bg-green-50'}`}
+          aria-label="Reanudar audio"
+          title="Reanudar audio"
+        >
+          {variant === 'text' && "Reanudar"}
+          <Play className={iconSizeClass} />
+        </button>
+      );
+    }
+    
+    return (
+      <button
+        onClick={handlePlay}
+        disabled={isLoading}
+        className={`${baseClasses} ${variant !== 'text' ? 'bg-blue-500 hover:bg-blue-600' : 'text-blue-500 hover:bg-blue-50'}`}
+        aria-label="Reproducir audio"
+        title="Reproducir audio"
+      >
+        {isLoading ? (
+          <>
+            {variant === 'text' && "Generando..."}
+            <Loader2 className={`${iconSizeClass} animate-spin`} />
+          </>
+        ) : (
+          <>
+            {variant === 'text' && "Reproducir"}
+            {audioUrl ? <Play className={iconSizeClass} /> : <Volume2 className={iconSizeClass} />}
+          </>
+        )}
+      </button>
+    );
+  };
+  
+  // Renderizado de indicador de audio
+  const renderAudioIndicator = () => {
+    if (!isPlaying && !isPaused) return null;
+    
+    return (
+      <div className="relative w-full max-w-xs h-1 bg-gray-200 rounded-full overflow-hidden">
+        <div 
+          className="absolute top-0 left-0 h-full bg-blue-500 transition-all"
+          style={{ width: `${audioProgress}%` }}
+        ></div>
+      </div>
+    );
+  };
+  
+  // Renderizado de indicadores de audio animados
+  const renderAudioWaveform = () => {
+    if (!isPlaying) return null;
+    
+    return (
+      <div className="flex items-center space-x-1 ml-2">
+        <div className="w-1 h-3 bg-green-500 rounded-full animate-pulse"></div>
+        <div className="w-1 h-5 bg-green-500 rounded-full animate-pulse delay-75"></div>
+        <div className="w-1 h-4 bg-green-500 rounded-full animate-pulse delay-150"></div>
+        <div className="w-1 h-6 bg-green-500 rounded-full animate-pulse delay-300"></div>
+        <div className="w-1 h-2 bg-green-500 rounded-full animate-pulse delay-150"></div>
+      </div>
+    );
+  };
 
   return (
-    <div className="flex flex-col items-center">
-      <audio 
-        ref={audioRef} 
-        onPlay={() => {
-          setIsPlaying(true);
-          if (onPlayStart) onPlayStart();
-        }}
-        onPause={() => setIsPlaying(false)}
-        onEnded={() => {
-          setIsPlaying(false);
-          if (onPlayEnd) onPlayEnd();
-        }}
-        hidden
-      />
+    <div className={`flex flex-col items-center ${className}`}>
+      <audio ref={audioRef} hidden />
       
-      <div className="flex space-x-2">
-        {isPlaying ? (
+      <div className="flex items-center space-x-2">
+        {renderButton()}
+        
+        {variant !== 'minimal' && audioUrl && (
           <button
-            onClick={handlePause}
-            disabled={isLoading || !audioUrl}
-            className="p-2 bg-red-500 text-white rounded-full hover:bg-red-600 disabled:opacity-50"
-            aria-label="Pausar audio"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </button>
-        ) : (
-          <button
-            onClick={handlePlay}
+            onClick={handleRegenerate}
             disabled={isLoading}
-            className="p-2 bg-blue-500 text-white rounded-full hover:bg-blue-600 disabled:opacity-50"
-            aria-label="Reproducir audio"
+            className="p-2 text-gray-500 rounded-full hover:bg-gray-100 disabled:opacity-50"
+            aria-label="Regenerar audio"
+            title="Regenerar audio"
           >
-            {isLoading ? (
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            )}
+            <RefreshCw className="h-4 w-4" />
           </button>
         )}
+        
+        {isPlaying && renderAudioWaveform()}
       </div>
       
-      {error && (
-        <p className="text-xs text-red-500 mt-1">{error}</p>
+      {variant !== 'minimal' && renderAudioIndicator()}
+      
+      {showError && error && (
+        <div className="mt-2 p-2 bg-red-100 border border-red-300 rounded-md max-w-md flex items-start">
+          <AlertCircle className="h-4 w-4 text-red-500 mr-2 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-red-700">{error}</p>
+        </div>
       )}
     </div>
   );

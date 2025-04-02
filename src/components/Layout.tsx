@@ -65,10 +65,11 @@ const Layout: React.FC<LayoutProps> = ({
                     height={40}
                     className="rounded-full shadow-sm"
                     onError={(e) => {
-                      // Fallback si la imagen no carga
                       const target = e.target as HTMLImageElement;
+                      const errorMsg = 'Error al cargar la imagen';
                       target.onerror = null;
-                      target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBmaWxsPSIjMDA3QUZGIiByeD0iMjAiIC8+PHRleHQgeD0iMjAiIHk9IjI2IiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMjAiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5MSUE8L3RleHQ+PC9zdmc+';
+                      target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBmaWxsPSIjMDA3QUZGIiByeD0iMjAiIC8+PHRleHQgeD0iMjAiIHk9IjI2IiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMjAiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5MSUE8L3RleHQ+';
+                      console.error(errorMsg);
                     }}
                   />
                   <Image
@@ -78,10 +79,11 @@ const Layout: React.FC<LayoutProps> = ({
                     height={40}
                     className="rounded-full shadow-sm"
                     onError={(e) => {
-                      // Fallback si la imagen no carga
                       const target = e.target as HTMLImageElement;
+                      const errorMsg = 'Error al cargar la imagen';
                       target.onerror = null;
-                      target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBmaWxsPSIjMDA3QUZGIiByeD0iMjAiIC8+PHRleHQgeD0iMjAiIHk9IjI2IiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMjAiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5MSUE8L3RleHQ+PC9zdmc+';
+                      target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBmaWxsPSIjMDA3QUZGIiByeD0iMjAiIC8+PHRleHQgeD0iMjAiIHk9IjI2IiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMjAiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5MSUE8L3RleHQ+';
+                      console.error(errorMsg);
                     }}
                   />
                 </div>
