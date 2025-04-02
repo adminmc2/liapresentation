@@ -1,121 +1,148 @@
-// src/lib/services/enhanced-script-manager.ts (ajustado)
+// src/lib/services/enhanced-elevenlabs-service.ts
+import axios from 'axios';
 
-import { ScriptSegment, demoScript } from '../data/script-data';
-
-// Interfaz para escenas (opcional, para organización mejorada)
-export interface ScriptScene {
-  id: number;
-  title: string;
-  segments: ScriptSegment[];
+/**
+ * Opciones para la síntesis de voz (mantiene compatibilidad con el servicio original)
+ */
+export interface SpeechOptions {
+  /** Texto a sintetizar */
+  text: string;
+  /** ID de la voz a utilizar */
+  voiceId: string;
+  /** ID del modelo a utilizar (opcional) */
+  modelId?: string;
+  /** Nivel de estabilidad (0.0-1.0) */
+  stability?: number;
+  /** Nivel de similitud (0.0-1.0) */
+  similarityBoost?: number;
+  /** Estilo de la voz (0-100) */
+  style?: number;
+  /** Uso de marcadores de respiración para mayor naturalidad */
+  useBreathingMarkers?: boolean;
+  /** Usar caché para evitar regenerar el mismo audio */
+  useCache?: boolean;
 }
 
-export interface ScriptState {
-  segments: ScriptSegment[];
-  currentIndex: number;
-  isActive: boolean;
-  // Campos opcionales para soporte de escenas
-  scenes?: ScriptScene[];
-  currentSceneIndex?: number;
-}
+// Caché para evitar generar el mismo audio repetidamente
+const audioCache = new Map<string, Blob>();
 
-export class EnhancedScriptManager {
-  private state: ScriptState;
-  private listeners: ((state: ScriptState) => void)[] = [];
-  private segmentToSceneMap: Map<string, number> = new Map();
-
-  constructor(initialScript: ScriptSegment[] = demoScript) {
-    // Mantiene la compatibilidad con la estructura actual plana
-    this.state = {
-      segments: initialScript,
-      currentIndex: 0,
-      isActive: false
-    };
+/**
+ * Servicio mejorado para interactuar con la API de ElevenLabs
+ */
+export const EnhancedElevenLabsService = {
+  /**
+   * Preprocesa el texto para mejorar la naturalidad
+   */
+  preprocessText(text: string, useBreathingMarkers: boolean = true): string {
+    let processedText = text;
     
-    // Opcionalmente, podríamos convertir los segmentos en escenas estructuradas
-    // this.convertToScenes(initialScript);
-  }
-
-  // Método para convertir el array plano a una estructura por escenas
-  convertToScenes(segments: ScriptSegment[]): void {
-    // Agrupar segmentos por número de escena
-    const sceneMap = new Map<number, ScriptSegment[]>();
-    
-    segments.forEach(segment => {
-      if (!sceneMap.has(segment.scene)) {
-        sceneMap.set(segment.scene, []);
-      }
-      sceneMap.get(segment.scene)!.push(segment);
-    });
-    
-    // Crear array de escenas ordenado
-    const scenes: ScriptScene[] = [];
-    
-    // Ordenar las escenas por número
-    const sceneNumbers = Array.from(sceneMap.keys()).sort((a, b) => a - b);
-    
-    sceneNumbers.forEach(sceneNumber => {
-      scenes.push({
-        id: sceneNumber,
-        title: `Escena ${sceneNumber}`,
-        segments: sceneMap.get(sceneNumber)!
-      });
-    });
-    
-    // Actualizar el estado
-    this.state.scenes = scenes;
-    this.state.currentSceneIndex = 0;
-    
-    // Crear mapa de segmentos a escenas para referencia rápida
-    this.buildSegmentToSceneMap(scenes);
-  }
-  
-  // Resto de métodos igual que en la implementación anterior...
-  // (getState, getCurrentSegment, nextSegment, etc.)
-
-  // Método actualizado para buscar por palabras clave con mayor precisión
-  findSegmentByKeywords(text: string): { segment: ScriptSegment, confidence: number } | null {
-    const normalizedText = text.toLowerCase();
-    
-    let bestMatch: { segment: ScriptSegment, confidence: number } | null = null;
-    
-    this.state.segments.forEach(segment => {
-      if (!segment.keywords || segment.keywords.length === 0) return;
+    // Añadimos marcadores de respiración si se solicita
+    if (useBreathingMarkers) {
+      // Añadir respiraciones naturales después de comas, puntos, etc.
+      processedText = processedText.replace(/([.!?])\s+/g, '$1 <break time="500ms"/> ');
+      processedText = processedText.replace(/([,;:])\s+/g, '$1 <break time="300ms"/> ');
       
-      let matchCount = 0;
-      let keywordCount = segment.keywords.length;
-      
-      segment.keywords.forEach(keyword => {
-        if (normalizedText.includes(keyword.toLowerCase())) {
-          matchCount++;
-        } else {
-          // Buscar palabras similares con tolerancia a errores
-          const words = normalizedText.split(/\s+/);
-          for (const word of words) {
-            if (this.isWordSimilar(word, keyword.toLowerCase())) {
-              matchCount += 0.7; // Coincidencia parcial
-              break;
-            }
-          }
+      // Añadir respiraciones adicionales en frases largas
+      const sentences = processedText.split(/([.!?])\s+/);
+      for (let i = 0; i < sentences.length; i++) {
+        if (sentences[i].length > 100) {
+          // Para frases muy largas, añadir pausas adicionales
+          sentences[i] = sentences[i].replace(/(\S{100,}?)[^\S\r\n]+/g, '$1 <break time="200ms"/> ');
         }
-      });
+      }
+      processedText = sentences.join('');
+    }
+    
+    // Optimizamos palabras técnicas para mejor pronunciación
+    processedText = processedText.replace(/\bLLM\b/g, 'L L M');
+    processedText = processedText.replace(/\bSLM\b/g, 'S L M');
+    processedText = processedText.replace(/\bIA\b/g, 'I A');
+    
+    return processedText;
+  },
+
+  /**
+   * Convierte texto a voz usando la API
+   * Mantiene compatibilidad con el servicio original
+   * pero añade mejoras de naturalidad y rendimiento
+   */
+  async synthesizeSpeech(options: SpeechOptions): Promise<Blob> {
+    try {
+      // Validación básica
+      if (!options.text?.trim()) {
+        throw new Error('El texto no puede estar vacío');
+      }
       
-      if (matchCount > 0) {
-        const confidence = matchCount / keywordCount;
+      const {
+        text,
+        voiceId,
+        modelId = 'eleven_monolingual_v1',
+        stability = 0.35, // Valor optimizado para mayor naturalidad
+        similarityBoost = 0.75, // Valor optimizado para balance
+        style = 0.15, // Valor optimizado para expresividad
+        useBreathingMarkers = true,
+        useCache = true
+      } = options;
+      
+      // Crear clave para caché
+      if (useCache) {
+        const cacheKey = JSON.stringify({
+          text,
+          voiceId,
+          modelId,
+          stability,
+          similarityBoost,
+          style,
+          useBreathingMarkers
+        });
         
-        if (!bestMatch || confidence > bestMatch.confidence) {
-          bestMatch = { segment, confidence };
+        // Verificar si ya tenemos este audio en caché
+        if (audioCache.has(cacheKey)) {
+          console.log('Usando audio en caché');
+          return audioCache.get(cacheKey)!;
         }
       }
-    });
-    
-    return bestMatch;
+      
+      // Preprocesamos el texto para mejorar naturalidad
+      const processedText = this.preprocessText(text, useBreathingMarkers);
+      
+      // Realizar la solicitud a nuestra API proxy
+      const response = await axios.post(
+        '/api/elevenlabs',
+        {
+          text: processedText,
+          voiceId: voiceId,
+          modelId: modelId,
+          stability: stability,
+          similarityBoost: similarityBoost,
+          style: style
+        },
+        {
+          responseType: 'blob'
+        }
+      );
+      
+      // Guardamos en caché para futuras reproducciones si está activado
+      if (useCache) {
+        const cacheKey = JSON.stringify({
+          text,
+          voiceId,
+          modelId,
+          stability,
+          similarityBoost,
+          style,
+          useBreathingMarkers
+        });
+        audioCache.set(cacheKey, response.data);
+      }
+      
+      return response.data;
+    } catch (error) {
+      console.error('Error en la síntesis de voz mejorada:', error);
+      throw error;
+    }
   }
-
-  // Resto de métodos igual que en la implementación anterior...
-}
-
-// Instancia singleton para usar en toda la aplicación
-export const enhancedScriptManager = new EnhancedScriptManager();
+};
 
 // Para mantener compatibilidad con código existente
-export const scriptManager = enhancedScriptManager;
+export default EnhancedElevenLabsService;
