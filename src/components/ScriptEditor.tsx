@@ -14,6 +14,10 @@ export default function SimpleScriptEditor() {
   // Estado para controlar el diálogo de edición
   const [isEditing, setIsEditing] = useState(false);
   
+  // Estado para mostrar código en ventana modal
+  const [showTsCode, setShowTsCode] = useState(false);
+  const [tsCodeContent, setTsCodeContent] = useState('');
+  
   // Cargar el guión inicial
   useEffect(() => {
     // Intentar cargar desde localStorage primero
@@ -55,7 +59,9 @@ export default function SimpleScriptEditor() {
       keywords: [],
       responseVoice: true,
       isActive: false,
-      isCompleted: false
+      isCompleted: false,
+      visualTiming: 'start',    // Valor predeterminado
+      visualDelay: 500,         // Valor predeterminado
     };
     
     setEditingSegment(newSegment);
@@ -192,6 +198,13 @@ export interface ScriptSegment {
   responseVoice?: boolean; // Si el texto debe ser leído por voz
   isActive?: boolean;     // Si es el segmento activo actualmente
   isCompleted?: boolean;  // Si ya se ha completado este segmento
+  
+  // Campos de control de visualización
+  visualTiming?: 'start' | 'middle' | 'end' | 'afterResponse' | 'onPhrase'; // Cuándo mostrar la visualización
+  visualTriggerPhrase?: string; // Frase específica que activa la visualización
+  visualDelay?: number;   // Tiempo de retraso antes de mostrar la visualización (ms)
+  visualDuration?: number; // Duración de la visualización (ms) - opcional, 0 para permanente
+  visualPersist?: boolean; // Si la visualización debe mantenerse en las siguientes intervenciones
 }
 
 // Guión completo
@@ -215,10 +228,6 @@ export const demoScript: ScriptSegment[] = liaScript;`;
         alert('Error al copiar. Por favor, usa el botón "Ver código" y cópialo manualmente.');
       });
   };
-  
-  // Mostrar código en ventana modal
-  const [showTsCode, setShowTsCode] = useState(false);
-  const [tsCodeContent, setTsCodeContent] = useState('');
 
   // Importar un guión
   const handleImportScript = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -269,8 +278,10 @@ export const demoScript: ScriptSegment[] = liaScript;`;
     const liaSegments = script.filter(s => s.speaker === 'LIA').length;
     const armandoSegments = script.filter(s => s.speaker === 'Armando').length;
     const totalScenes = new Set(script.map(s => s.scene)).size;
+    const visualSegments = script.filter(s => s.visualType).length;
+    const persistentVisuals = script.filter(s => s.visualPersist).length;
     
-    return { totalSegments, liaSegments, armandoSegments, totalScenes };
+    return { totalSegments, liaSegments, armandoSegments, totalScenes, visualSegments, persistentVisuals };
   };
 
   const stats = getScriptStats();
@@ -333,7 +344,7 @@ export const demoScript: ScriptSegment[] = liaScript;`;
         {/* Estadísticas */}
         <div className="bg-white p-4 rounded shadow mb-6">
           <h2 className="text-lg font-bold mb-3">Estadísticas del Guión</h2>
-          <div className="grid grid-cols-4 gap-4 text-center">
+          <div className="grid grid-cols-6 gap-4 text-center">
             <div className="p-3 bg-blue-100 rounded">
               <p className="text-2xl font-bold">{stats.totalSegments}</p>
               <p className="text-sm text-gray-500">Total de segmentos</p>
@@ -349,6 +360,14 @@ export const demoScript: ScriptSegment[] = liaScript;`;
             <div className="p-3 bg-amber-100 rounded">
               <p className="text-2xl font-bold">{stats.totalScenes}</p>
               <p className="text-sm text-gray-500">Escenas</p>
+            </div>
+            <div className="p-3 bg-pink-100 rounded">
+              <p className="text-2xl font-bold">{stats.visualSegments}</p>
+              <p className="text-sm text-gray-500">Con visualización</p>
+            </div>
+            <div className="p-3 bg-indigo-100 rounded">
+              <p className="text-2xl font-bold">{stats.persistentVisuals}</p>
+              <p className="text-sm text-gray-500">Persistentes</p>
             </div>
           </div>
         </div>
@@ -439,7 +458,20 @@ export const demoScript: ScriptSegment[] = liaScript;`;
                   <div className="mb-2">
                     <span className="text-xs text-gray-500">Visualización:</span>
                     <p className="mt-1 text-sm">
-                      {segment.visualType} {segment.visualContent && `- ${segment.visualContent}`}
+                      {segment.visualType} - {segment.visualContent}
+                      {segment.visualTiming && (
+                        <span className="ml-2 px-1.5 py-0.5 text-xs bg-pink-100 text-pink-800 rounded">
+                          {segment.visualTiming}
+                          {segment.visualTiming === 'onPhrase' && segment.visualTriggerPhrase && (
+                            <span className="ml-1">: "{segment.visualTriggerPhrase.substring(0, 20)}..."</span>
+                          )}
+                        </span>
+                      )}
+                      {segment.visualPersist && (
+                        <span className="ml-2 px-1.5 py-0.5 text-xs bg-blue-100 text-blue-800 rounded">
+                          Persistente
+                        </span>
+                      )}
                     </p>
                   </div>
                 )}
@@ -451,7 +483,7 @@ export const demoScript: ScriptSegment[] = liaScript;`;
         {/* Formulario de edición */}
         {editingSegment && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-3xl">
+            <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
               <h2 className="text-xl font-bold mb-4">{isEditing ? 'Editar Segmento' : 'Nuevo Segmento'}</h2>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -548,6 +580,90 @@ export const demoScript: ScriptSegment[] = liaScript;`;
                       className="w-full p-2 border rounded"
                     />
                   </div>
+                )}
+                
+                {/* Nuevos campos para control de visualización */}
+                {editingSegment.visualType && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Momento de visualización</label>
+                      <select
+                        value={editingSegment.visualTiming || 'start'}
+                        onChange={(e) => setEditingSegment({...editingSegment, visualTiming: e.target.value as 'start' | 'middle' | 'end' | 'afterResponse' | 'onPhrase'})}
+                        className="w-full p-2 border rounded"
+                      >
+                        <option value="start">Al inicio de la intervención</option>
+                        <option value="middle">En medio de la intervención</option>
+                        <option value="end">Al final de la intervención</option>
+                        <option value="afterResponse">Después de respuesta de Armando</option>
+                        <option value="onPhrase">Al mencionar una frase específica</option>
+                      </select>
+                    </div>
+                    
+                    {editingSegment.visualTiming === 'onPhrase' && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Frase activadora</label>
+                        <input
+                          type="text"
+                          value={editingSegment.visualTriggerPhrase || ''}
+                          onChange={(e) => setEditingSegment({...editingSegment, visualTriggerPhrase: e.target.value})}
+                          placeholder="Frase que activa la visualización"
+                          className="w-full p-2 border rounded"
+                        />
+                      </div>
+                    )}
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Retraso antes de mostrar (ms): {editingSegment.visualDelay || 500}
+                      </label>
+                      <input
+                        type="range"
+                        min="0"
+                        max="2000"
+                        step="100"
+                        value={editingSegment.visualDelay || 500}
+                        onChange={(e) => setEditingSegment({...editingSegment, visualDelay: parseInt(e.target.value)})}
+                        className="w-full"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Duración (ms, 0 = permanente): {editingSegment.visualDuration || 0}
+                      </label>
+                      <input
+                        type="range"
+                        min="0"
+                        max="10000"
+                        step="500"
+                        value={editingSegment.visualDuration || 0}
+                        onChange={(e) => setEditingSegment({...editingSegment, visualDuration: parseInt(e.target.value)})}
+                        className="w-full"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        {(editingSegment.visualDuration || 0) === 0 ? 'Se mostrará permanentemente hasta el siguiente cambio' : `Se mostrará durante ${(editingSegment.visualDuration || 0) / 1000} segundos`}
+                      </p>
+                    </div>
+                    
+                    {/* Checkbox para persistencia visual */}
+                    <div className="md:col-span-2">
+                      <label className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          checked={editingSegment.visualPersist || false}
+                          onChange={(e) => setEditingSegment({...editingSegment, visualPersist: e.target.checked})}
+                          className="rounded text-pink-500 focus:ring-pink-500"
+                        />
+                        <span className="text-sm font-medium text-gray-700">
+                          Mantener esta visualización en las siguientes intervenciones
+                        </span>
+                      </label>
+                      <p className="ml-6 text-xs text-gray-500 mt-1">
+                        Si está activado, esta visualización permanecerá visible hasta que otra visualización la reemplace explícitamente
+                      </p>
+                    </div>
+                  </>
                 )}
                 
                 <div className="md:col-span-2">

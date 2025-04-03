@@ -11,6 +11,13 @@ export interface ScriptSegment {
   responseVoice?: boolean; // Si el texto debe ser leído por voz
   isActive?: boolean;     // Si es el segmento activo actualmente
   isCompleted?: boolean;  // Si ya se ha completado este segmento
+  
+  // Nuevos campos para control preciso de visualizaciones
+  visualTiming?: 'start' | 'middle' | 'end' | 'afterResponse' | 'onPhrase'; // Cuándo mostrar la visualización
+  visualTriggerPhrase?: string; // Frase específica que activa la visualización
+  visualDelay?: number;   // Tiempo de retraso antes de mostrar la visualización (ms)
+  visualDuration?: number; // Duración de la visualización (ms) - opcional, 0 para permanente
+  visualPersist?: boolean; // Si la visualización debe mantenerse hasta que otra la reemplace
 }
 
 // Guión base (primeras tres escenas)
@@ -25,7 +32,9 @@ export const initialLiaScript: ScriptSegment[] = [
     visualContent: '/armando-en-varsovia.jpg',
     responseVoice: true,
     isActive: false,
-    isCompleted: false
+    isCompleted: false,
+    visualTiming: 'start', // Mostrar al inicio de la intervención de LIA
+    visualDelay: 500 // Mostrar después de medio segundo
   },
   {
     id: 'escena1-armando-respuesta',
@@ -46,7 +55,10 @@ export const initialLiaScript: ScriptSegment[] = [
     visualContent: '/manzanares.jpg',
     responseVoice: true,
     isActive: false,
-    isCompleted: false
+    isCompleted: false,
+    visualTiming: 'onPhrase', // Mostrar cuando se mencione la frase específica
+    visualTriggerPhrase: 'el río Manzanares fue un río de verdad', // Frase que activa la visualización
+    visualDelay: 300 // Mostrar después de 300ms
   },
   {
     id: 'escena2-armando-respuesta',
@@ -74,7 +86,9 @@ export const initialLiaScript: ScriptSegment[] = [
     text: 'Sí, si las enseñaremos. Antes dos cuestiones E=MC2 es una startup pensada para el uso de herramientas de IA aplicadas para la enseñanza de español como lengua extranjera. Y bueno entremos un poco en tarea explica un poco las diferencias entre un SLM y un LLM.',
     keywords: ['sí', 'enseñaremos', 'startup', 'diferencias', 'SLM', 'LLM'],
     isActive: false,
-    isCompleted: false
+    isCompleted: false,
+    visualTiming: 'afterResponse', // Mostrar después de que Armando hable
+    visualDelay: 1000 // Mostrar después de 1 segundo
   },
   {
     id: 'escena3-lia-explicacion',
@@ -86,7 +100,10 @@ export const initialLiaScript: ScriptSegment[] = [
     visualContent: 'LLMvsSLM', // Este sería un componente específico que crearemos
     responseVoice: true,
     isActive: false,
-    isCompleted: false
+    isCompleted: false,
+    visualTiming: 'middle', // Mostrar en medio de la intervención de LIA
+    visualTriggerPhrase: 'Aquí va un chef consulta', // Frase aproximada para mostrar en medio
+    visualDelay: 500 // Mostrar después de medio segundo
   }
 ];
 

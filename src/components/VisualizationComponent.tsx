@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import LLMvsSLMTable from './LLMvsSLMTable';
 
 // Tipos de visualización soportados
-export type VisualizationType = 'slide' | 'table' | 'image' | 'chart' | 'none';
+export type VisualizationType = 'slide' | 'table' | 'image' | 'chart' | 'loading' | 'none';
 
 // Interfaz para el contenido de visualización
 interface VisualizationContent {
@@ -30,6 +30,7 @@ interface VisualizationProps {
   alt?: string;
   className?: string;
   showAnimation?: boolean;
+  isLoading?: boolean;
 }
 
 const VisualizationComponent: React.FC<VisualizationProps> = ({
@@ -38,7 +39,8 @@ const VisualizationComponent: React.FC<VisualizationProps> = ({
   title,
   alt = 'Visualización',
   className = '',
-  showAnimation = true
+  showAnimation = true,
+  isLoading = false
 }) => {
   // Placeholder para cuando no hay visualización
   const EmptyVisualization = () => (
@@ -50,6 +52,21 @@ const VisualizationComponent: React.FC<VisualizationProps> = ({
       </div>
       <p className="text-gray-400 text-sm">
         {content.text || "La visualización aparecerá aquí durante la presentación"}
+      </p>
+    </div>
+  );
+
+  // Componente de carga
+  const LoadingVisualization = () => (
+    <div className="h-full flex flex-col items-center justify-center text-center p-6">
+      <div className="w-16 h-16 rounded-full bg-pink-50 flex items-center justify-center mb-4">
+        <svg className="animate-spin h-8 w-8 text-pink-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+      </div>
+      <p className="text-gray-500 text-sm animate-pulse">
+        Cargando visualización...
       </p>
     </div>
   );
@@ -77,6 +94,11 @@ const VisualizationComponent: React.FC<VisualizationProps> = ({
 
   // Renderizado según el tipo de visualización
   const renderVisualization = () => {
+    // Si está cargando, mostrar indicador
+    if (isLoading || type === 'loading') {
+      return <LoadingVisualization />;
+    }
+
     switch (type) {
       case 'slide':
         return (
@@ -112,7 +134,7 @@ const VisualizationComponent: React.FC<VisualizationProps> = ({
       
       case 'table':
         // Para tablas específicas como LLM vs SLM
-        if (content.type === 'llmvsslm') {
+        if (content.type === 'llmvsslm' || content.type === 'LLMvsSLM') {
           return <LLMvsSLMTable title={content.title} showAnimation={showAnimation} />;
         }
         
@@ -200,7 +222,7 @@ const VisualizationComponent: React.FC<VisualizationProps> = ({
   return (
     <AnimatePresence mode="wait">
       <motion.div
-        key={`${type}-${content.title}`}
+        key={`${type}-${content.title}-${isLoading}`}
         initial={showAnimation ? "hidden" : "visible"}
         animate="visible"
         exit="exit"

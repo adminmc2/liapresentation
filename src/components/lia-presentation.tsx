@@ -1,201 +1,588 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { ScriptViewer } from './script/script-viewer';
-import { ScriptTracker } from './script/script-tracker';
-import { VoiceRecognition } from '@/components/ui/voice-recognition';
-import { VoiceSynthesis } from '@/components/ui/voice-synthesis';
-import { Visualization } from '@/components/ui/visualization';
-import { scriptManager } from '@/lib/services/enhanced-script-manager';
-import { ScriptSegment } from '@/lib/data/script-data';
+import React, { useState, useRef, useEffect } from 'react';
+import { toast } from 'sonner';
+import { Play, Pause, Volume2, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import { EnhancedElevenLabsService as ElevenLabsService } from '@/lib/services/enhanced-elevenlabs-service';
 
-export const LIAPresentation: React.FC = () => {
-  const [currentSegment, setCurrentSegment] = useState<ScriptSegment | null>(
-    scriptManager.getCurrentSegment()
-  );
-  const [responseText, setResponseText] = useState<string>('');
-  const [showVisualization, setShowVisualization] = useState<boolean>(false);
-  const [isLIASpeaking, setIsLIASpeaking] = useState<boolean>(false);
+// Nueva interfaz para visualizaciones
+interface Visualization {
+  type: string;
+  content: any;
+  isPersistent?: boolean;
+}
 
-  // Actualizar el estado cuando cambia el segmento del guión
+interface VoiceSynthesisProps {
+  text: string;
+  voiceId?: string;
+  autoPlay?: boolean;
+  stability?: number;
+  similarityBoost?: number;
+  style?: number;
+  showControls?: boolean;
+  buttonSize?: 'sm' | 'md' | 'lg';
+  variant?: 'default' | 'minimal' | 'text';
+  showError?: boolean;
+  className?: string;
+  // Nuevos props para seguimiento de texto
+  onTextUpdate?: (currentText: string, isComplete: boolean) => void;
+  trackSpeechProgress?: boolean;
+  onPlayStart?: () => void;
+  onPlayEnd?: () => void;
+  onError?: (error: string) => void;
+  // Nuevos props para visualizaciones
+  currentVisualization?: Visualization | null;
+  onVisualizationChange?: (visualization: Visualization | null) => void;
+  defaultVisualization?: Visualization | null;
+  disablePersistentVisualization?: boolean;
+}
+
+/**
+ * Componente mejorado para síntesis de voz utilizando ElevenLabs
+ */
+export const VoiceSynthesis: React.FC<VoiceSynthesisProps> = ({
+  text,
+  voiceId = 'gD1IexrzCvsXPHUuT0s3', // ID por defecto de ElevenLabs
+  autoPlay = false,
+  stability = 0.5,
+  similarityBoost = 0.75,
+  style = 0,
+  showControls = true,
+  buttonSize = 'md',
+  variant = 'default',
+  showError = true,
+  className = '',
+  // Nuevos props
+  onTextUpdate,
+  trackSpeechProgress = false,
+  onPlayStart,
+  onPlayEnd,
+  onError,
+  // Props de visualización
+  currentVisualization = null,
+  onVisualizationChange,
+  defaultVisualization = null,
+  disablePersistentVisualization = false
+}) => {
+  const [isLoading, setIsLoading] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [audioProgress, setAudioProgress] = useState(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  
+  // Para seguimiento de texto
+  const [currentSpeechSegment, setCurrentSpeechSegment] = useState('');
+  const textProgressRef = useRef(0);
+  const textSegmentsRef = useRef<string[]>([]);
+  const speechCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Nuevo: para visualizaciones persistentes
+  const [lastPersistentVisualization, setLastPersistentVisualization] = useState<Visualization | null>(null);
+  const [activeVisualization, setActiveVisualization] = useState<Visualization | null>(null);
+  const [isLoadingVisualization, setIsLoadingVisualization] = useState(false);
+
+  // Tamaños de botón según la prop
+  const buttonSizeClass = {
+    sm: 'w-8 h-8',
+    md: 'w-10 h-10',
+    lg: 'w-12 h-12'
+  }[buttonSize];
+  
+  const iconSizeClass = {
+    sm: 'h-4 w-4',
+    md: 'h-5 w-5',
+    lg: 'h-6 w-6'
+  }[buttonSize];
+  
+  // Determinar clases según la variante
+  const getButtonClasses = () => {
+    if (variant === 'minimal') {
+      return `${buttonSizeClass} flex items-center justify-center rounded-full text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed`;
+    } else if (variant === 'text') {
+      return `flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed`;
+    }
+    return `${buttonSizeClass} flex items-center justify-center rounded-full shadow-sm text-white transition-colors hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed`;
+  };
+
+  // Configuración para seguimiento de texto
   useEffect(() => {
-    const unsubscribe = scriptManager.subscribe(state => {
-      const segment = scriptManager.getCurrentSegment();
-      setCurrentSegment(segment);
+    if (trackSpeechProgress && text) {
+      // Dividir el texto en segmentos lógicos (por frases)
+      const segments = text
+        .replace(/([.!?])\s+/g, '$1|')
+        .replace(/([,;:])\s+/g, '$1|')
+        .split('|')
+        .filter(s => s.trim().length > 0);
       
-      // Si el segmento actual es de LIA, preparar la respuesta
-      if (segment && segment.speaker === 'LIA') {
-        setResponseText(segment.text);
-        setShowVisualization(!!segment.visualType && !!segment.visualContent);
-      } else {
-        setResponseText('');
-        setShowVisualization(false);
-      }
-    });
-    
-    return unsubscribe;
-  }, []);
+      textSegmentsRef.current = segments;
+      textProgressRef.current = 0;
+    }
+  }, [text, trackSpeechProgress]);
 
-  // Manejar el resultado del reconocimiento de voz con más automatización
-  const handleVoiceResult = (text: string) => {
-    console.log('Texto reconocido:', text);
+  // Efecto para manejar visualizaciones externas
+  useEffect(() => {
+    if (currentVisualization) {
+      // Si es una visualización persistente, guardarla
+      if (currentVisualization.isPersistent && !disablePersistentVisualization) {
+        setLastPersistentVisualization(currentVisualization);
+      }
+      
+      // Actualizar visualización activa
+      setActiveVisualization(currentVisualization);
+    } else if (defaultVisualization) {
+      // Si no hay visualización actual pero hay una por defecto
+      setActiveVisualization(defaultVisualization);
+    }
+  }, [currentVisualization, defaultVisualization, disablePersistentVisualization]);
+
+  // Limpiar el URL del objeto cuando el componente se desmonte
+  useEffect(() => {
+    return () => {
+      if (audioUrl) {
+        URL.revokeObjectURL(audioUrl);
+      }
+      
+      if (speechCheckIntervalRef.current) {
+        clearInterval(speechCheckIntervalRef.current);
+      }
+    };
+  }, [audioUrl]);
+
+  // Efecto para realizar síntesis automática cuando cambia el texto
+  useEffect(() => {
+    if (text && autoPlay) {
+      synthesizeAndPlay();
+    }
+  }, [text, voiceId, autoPlay]);
+
+  // Manejar eventos de audio
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
     
-    // Si el segmento actual es de Armando, avanzar automáticamente al siguiente segmento (LIA)
-    const segment = scriptManager.getCurrentSegment();
-    if (segment && segment.speaker === 'Armando') {
-      // Pequeña demora para simular procesamiento natural
-      setTimeout(() => {
-        scriptManager.nextSegment();
-      }, 800);
+    const onPlay = () => {
+      setIsPlaying(true);
+      setIsPaused(false);
+      
+      // Iniciar seguimiento de texto si está habilitado
+      if (trackSpeechProgress) {
+        startSpeechProgressTracking();
+      }
+      
+      if (onPlayStart) onPlayStart();
+    };
+    
+    const onPause = () => {
+      setIsPlaying(false);
+      setIsPaused(true);
+      
+      // Pausar seguimiento de texto
+      if (speechCheckIntervalRef.current) {
+        clearInterval(speechCheckIntervalRef.current);
+      }
+    };
+    
+    const onEnded = () => {
+      setIsPlaying(false);
+      setIsPaused(false);
+      setAudioProgress(0);
+      
+      // Finalizar seguimiento de texto
+      if (trackSpeechProgress && onTextUpdate) {
+        onTextUpdate(text, true); // Notificar texto completo
+      }
+      
+      // Limpiar intervalo
+      if (speechCheckIntervalRef.current) {
+        clearInterval(speechCheckIntervalRef.current);
+      }
+      
+      if (onPlayEnd) onPlayEnd();
+    };
+    
+    const onTimeUpdate = () => {
+      if (audio.duration) {
+        setAudioProgress((audio.currentTime / audio.duration) * 100);
+      }
+    };
+    
+    const handleAudioError = () => {
+      const errorMsg = 'Error al reproducir el audio';
+      setError(errorMsg);
+      setIsPlaying(false);
+      if (onError) onError(errorMsg);
+    };
+    
+    // Añadir event listeners
+    audio.addEventListener('play', onPlay);
+    audio.addEventListener('pause', onPause);
+    audio.addEventListener('ended', onEnded);
+    audio.addEventListener('timeupdate', onTimeUpdate);
+    audio.addEventListener('error', handleAudioError);
+    
+    // Limpiar event listeners
+    return () => {
+      audio.removeEventListener('play', onPlay);
+      audio.removeEventListener('pause', onPause);
+      audio.removeEventListener('ended', onEnded);
+      audio.removeEventListener('timeupdate', onTimeUpdate);
+      audio.removeEventListener('error', handleAudioError);
+    };
+  }, [onPlayStart, onPlayEnd, onError, text, trackSpeechProgress, onTextUpdate]);
+
+  // Iniciar seguimiento de progreso del habla
+  const startSpeechProgressTracking = () => {
+    // Resetear progreso
+    textProgressRef.current = 0;
+    setCurrentSpeechSegment('');
+    
+    // Crear intervalo para actualizar progreso basado en el progreso del audio
+    if (speechCheckIntervalRef.current) {
+      clearInterval(speechCheckIntervalRef.current);
+    }
+    
+    speechCheckIntervalRef.current = setInterval(() => {
+      if (!audioRef.current || textSegmentsRef.current.length === 0) return;
+      
+      const audio = audioRef.current;
+      const progress = audio.currentTime / audio.duration;
+      
+      // Calcular cuántos segmentos deberían haberse reproducido
+      const segmentCount = textSegmentsRef.current.length;
+      const estimatedSegmentIndex = Math.min(
+        Math.floor(progress * segmentCount),
+        segmentCount - 1
+      );
+      
+      // Si avanzamos a un nuevo segmento, actualizar
+      if (estimatedSegmentIndex > textProgressRef.current) {
+        textProgressRef.current = estimatedSegmentIndex;
+        
+        // Construir el texto acumulado hasta el segmento actual
+        const spokenText = textSegmentsRef.current
+          .slice(0, estimatedSegmentIndex + 1)
+          .join(' ');
+        
+        setCurrentSpeechSegment(spokenText);
+        
+        // Notificar al componente padre
+        if (onTextUpdate) {
+          onTextUpdate(spokenText, false);
+        }
+      }
+    }, 250); // Verificar cada 250ms
+  };
+
+  // Función para sintetizar el texto y reproducirlo
+  const synthesizeAndPlay = async () => {
+    if (!text.trim()) {
+      const errorMsg = 'No hay texto para sintetizar';
+      setError(errorMsg);
+      if (onError) onError(errorMsg);
+      return;
+    }
+    
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      // Notificación simple sin usar dismiss
+      toast.info('Generando audio...', {
+        duration: 0 // Infinito, lo quitaremos manualmente con un success
+      });
+      
+      // Usando el servicio centralizado de ElevenLabs
+      const audioBlob = await ElevenLabsService.synthesizeSpeech({
+        text,
+        voiceId,
+        stability,
+        similarityBoost,
+        style,
+        useBreathingMarkers: true,
+        useCache: true
+      });
+      
+      // En lugar de dismiss, simplemente mostramos un nuevo toast de éxito
+      toast.success('Audio generado');
+      
+      // Crear URL para el blob de audio
+      const url = URL.createObjectURL(audioBlob);
+      
+      if (audioUrl) {
+        URL.revokeObjectURL(audioUrl);
+      }
+      
+      setAudioProgress(0);
+      setAudioUrl(url);
+      
+      if (audioRef.current) {
+        audioRef.current.src = url;
+        
+        try {
+          await audioRef.current.play();
+        } catch (err) {
+          console.error('Error al reproducir audio:', err);
+          const errorMsg = 'Error al reproducir audio. Compruebe que su navegador permite la reproducción automática.';
+          setError(errorMsg);
+          toast.error(errorMsg);
+          if (onError) onError(errorMsg);
+        }
+      }
+    } catch (err) {
+      console.error('Error en síntesis de voz:', err);
+      let errorMsg = 'Error en la síntesis de voz. Intente de nuevo.';
+      
+      if (err instanceof Error) {
+        if (err.message.includes('API key')) {
+          errorMsg = 'Error de autenticación con ElevenLabs. Verifique su API key.';
+        } else if (err.message.includes('quota')) {
+          errorMsg = 'Ha excedido su cuota de uso de ElevenLabs.';
+        } else if (err.message.includes('voice')) {
+          errorMsg = `Voz "${voiceId}" no encontrada. Verifique el ID de voz.`;
+        }
+      }
+      
+      setError(errorMsg);
+      toast.error(errorMsg);
+      if (onError) onError(errorMsg);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // Manejar la coincidencia de segmentos con baja creatividad (0.2-0.3)
-  const handleSegmentMatch = (segmentId: string, confidence: number) => {
-    console.log(`Coincidencia con segmento ${segmentId} (confianza: ${confidence})`);
+  // Función para determinar qué visualización mostrar
+  const determineVisualizationToShow = () => {
+    // Si estamos cargando visualización
+    if (isLoadingVisualization) {
+      return {
+        type: 'loading',
+        content: 'Cargando visualización...'
+      };
+    }
     
-    // Con una creatividad baja (0.2-0.3), solo avanzamos si hay alta confianza
-    if (confidence > 0.7) {
-      scriptManager.goToSegmentById(segmentId);
+    // Si hay una visualización activa explícita, usarla
+    if (currentVisualization) {
+      return currentVisualization;
+    }
+    
+    // Si no hay visualización activa pero hay una persistente guardada y no está desactivada
+    if (lastPersistentVisualization && !disablePersistentVisualization) {
+      return lastPersistentVisualization;
+    }
+    
+    // Si hay visualización por defecto, usarla
+    if (defaultVisualization) {
+      return defaultVisualization;
+    }
+    
+    // Sin visualización
+    return null;
+  };
+
+  // Obtener la visualización actual que debe mostrarse
+  const currentActiveVisualization = determineVisualizationToShow();
+  
+  // Notificar al componente padre sobre cambios en la visualización activa
+  useEffect(() => {
+    if (onVisualizationChange && currentActiveVisualization !== activeVisualization) {
+      setActiveVisualization(currentActiveVisualization);
+      onVisualizationChange(currentActiveVisualization);
+    }
+  }, [currentActiveVisualization, activeVisualization, onVisualizationChange]);
+  
+  // Función para limpiar visualizaciones persistentes
+  const clearPersistentVisualizations = () => {
+    setLastPersistentVisualization(null);
+    
+    // Solo notificar cambios si hay una función de callback
+    if (onVisualizationChange) {
+      // Determinar nueva visualización activa sin persistencia
+      const newActiveVisualization = currentVisualization || defaultVisualization || null;
+      onVisualizationChange(newActiveVisualization);
+    }
+  };
+
+  const handlePlay = () => {
+    if (audioRef.current && audioUrl) {
+      audioRef.current.play().catch(err => {
+        console.error('Error al reproducir audio:', err);
+        toast.error('Error al reproducir audio');
+      });
+    } else {
+      synthesizeAndPlay();
+    }
+  };
+
+  const handlePause = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
     }
   };
   
-  // Manejar cuando LIA termina de hablar
-  const handleLIASpeechEnd = () => {
-    setIsLIASpeaking(false);
-    
-    // Si el segmento actual es de LIA, podemos avanzar automáticamente al siguiente (Armando)
-    const segment = scriptManager.getCurrentSegment();
-    if (segment && segment.speaker === 'LIA') {
-      // Dar tiempo para que el usuario asimile lo que dijo LIA antes de avanzar
-      setTimeout(() => {
-        scriptManager.nextSegment();
-      }, 1500);
+  const handleRegenerate = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
     }
+    
+    // Eliminar el URL anterior
+    if (audioUrl) {
+      URL.revokeObjectURL(audioUrl);
+      setAudioUrl(null);
+    }
+    
+    synthesizeAndPlay();
   };
 
-  // Función para determinar si mostrar controles de reconocimiento de voz
-  const shouldShowVoiceControls = () => {
-    return currentSegment && currentSegment.speaker === 'Armando';
+  // Si no queremos mostrar controles, solo renderizamos el elemento de audio
+  if (!showControls) {
+    return <audio ref={audioRef} hidden />;
+  }
+  
+  // Renderizado de botones basado en variante
+  const renderButton = () => {
+    const baseClasses = getButtonClasses();
+    
+    if (isPlaying) {
+      return (
+        <button
+          onClick={handlePause}
+          disabled={isLoading || !audioUrl}
+          className={`${baseClasses} ${variant !== 'text' ? 'bg-red-500 hover:bg-red-600' : 'text-red-500 hover:bg-red-50'}`}
+          aria-label="Pausar audio"
+          title="Pausar audio"
+        >
+          {variant === 'text' && "Pausar"}
+          <Pause className={iconSizeClass} />
+        </button>
+      );
+    }
+    
+    if (isPaused && audioUrl) {
+      return (
+        <button
+          onClick={handlePlay}
+          disabled={isLoading}
+          className={`${baseClasses} ${variant !== 'text' ? 'bg-green-500 hover:bg-green-600' : 'text-green-500 hover:bg-green-50'}`}
+          aria-label="Reanudar audio"
+          title="Reanudar audio"
+        >
+          {variant === 'text' && "Reanudar"}
+          <Play className={iconSizeClass} />
+        </button>
+      );
+    }
+    
+    return (
+      <button
+        onClick={handlePlay}
+        disabled={isLoading}
+        className={`${baseClasses} ${variant !== 'text' ? 'bg-blue-500 hover:bg-blue-600' : 'text-blue-500 hover:bg-blue-50'}`}
+        aria-label="Reproducir audio"
+        title="Reproducir audio"
+      >
+        {isLoading ? (
+          <>
+            {variant === 'text' && "Generando..."}
+            <Loader2 className={`${iconSizeClass} animate-spin`} />
+          </>
+        ) : (
+          <>
+            {variant === 'text' && "Reproducir"}
+            {audioUrl ? <Play className={iconSizeClass} /> : <Volume2 className={iconSizeClass} />}
+          </>
+        )}
+      </button>
+    );
+  };
+  
+  // Renderizado de indicador de audio
+  const renderAudioIndicator = () => {
+    if (!isPlaying && !isPaused) return null;
+    
+    return (
+      <div className="relative w-full max-w-xs h-1 bg-gray-200 rounded-full overflow-hidden">
+        <div 
+          className="absolute top-0 left-0 h-full bg-blue-500 transition-all"
+          style={{ width: `${audioProgress}%` }}
+        ></div>
+      </div>
+    );
+  };
+  
+  // Renderizado de indicadores de audio animados
+  const renderAudioWaveform = () => {
+    if (!isPlaying) return null;
+    
+    return (
+      <div className="flex items-center space-x-1 ml-2">
+        <div className="w-1 h-3 bg-green-500 rounded-full animate-pulse"></div>
+        <div className="w-1 h-5 bg-green-500 rounded-full animate-pulse delay-75"></div>
+        <div className="w-1 h-4 bg-green-500 rounded-full animate-pulse delay-150"></div>
+        <div className="w-1 h-6 bg-green-500 rounded-full animate-pulse delay-300"></div>
+        <div className="w-1 h-2 bg-green-500 rounded-full animate-pulse delay-150"></div>
+      </div>
+    );
+  };
+  
+  // Renderizado de indicador de visualización persistente (opcional)
+  const renderPersistentIndicator = () => {
+    if (!lastPersistentVisualization || disablePersistentVisualization) return null;
+    
+    return (
+      <div className="mt-1 flex items-center">
+        <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full mr-2">
+          Visualización persistente activa
+        </span>
+        <button
+          onClick={clearPersistentVisualizations}
+          className="text-xs text-blue-600 hover:underline"
+        >
+          Limpiar
+        </button>
+      </div>
+    );
   };
 
   return (
-    <div className="flex flex-col gap-4 p-4 max-w-5xl mx-auto">
-      {/* Solo en modo desarrollo, mostrar el panel de guión (oculto en producción) */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="w-full space-y-4 border-b pb-4 mb-4">
-          <details>
-            <summary className="cursor-pointer font-medium text-gray-600 mb-2">Panel de control (solo desarrollo)</summary>
-            <div className="pl-4">
-              <ScriptViewer onSegmentChange={setCurrentSegment} />
-              <ScriptTracker />
-            </div>
-          </details>
+    <div className={`flex flex-col items-center ${className}`}>
+      <audio ref={audioRef} hidden />
+      
+      <div className="flex items-center space-x-2">
+        {renderButton()}
+        
+        {variant !== 'minimal' && audioUrl && (
+          <button
+            onClick={handleRegenerate}
+            disabled={isLoading}
+            className="p-2 text-gray-500 rounded-full hover:bg-gray-100 disabled:opacity-50"
+            aria-label="Regenerar audio"
+            title="Regenerar audio"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </button>
+        )}
+        
+        {isPlaying && renderAudioWaveform()}
+      </div>
+      
+      {variant !== 'minimal' && renderAudioIndicator()}
+      {variant !== 'minimal' && renderPersistentIndicator()}
+      
+      {showError && error && (
+        <div className="mt-2 p-2 bg-red-100 border border-red-300 rounded-md max-w-md flex items-start">
+          <AlertCircle className="h-4 w-4 text-red-500 mr-2 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-red-700">{error}</p>
         </div>
       )}
       
-      {/* Área principal con visualización y conversación */}
-      <div className="w-full flex flex-col space-y-6">
-        {/* Área de visualización */}
-        <div className="bg-white rounded-lg shadow-md p-6 min-h-[400px] flex flex-col items-center justify-center">
-          {showVisualization && currentSegment && (
-            <Visualization 
-              type={currentSegment.visualType} 
-              content={currentSegment.visualContent}
-              alt={`Visualización para ${currentSegment.id}`}
-            />
-          )}
-          
-          {!showVisualization && (
-            <div className="text-center text-gray-400 italic">
-              <p>Esperando contenido visual...</p>
-            </div>
-          )}
+      {/* Para desarrollo/depuración: mostrar segmento actual del habla */}
+      {trackSpeechProgress && currentSpeechSegment && false && (
+        <div className="mt-2 p-2 bg-blue-50 rounded text-sm max-w-md">
+          <p className="text-blue-800">{currentSpeechSegment}</p>
         </div>
-        
-        {/* Área de conversación */}
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-xl font-medium">Conversación</h3>
-            
-            {/* Indicador de estado */}
-            {isLIASpeaking ? (
-              <span className="px-3 py-1 rounded-full bg-green-100 text-green-800 text-sm flex items-center">
-                <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
-                LIA está hablando
-              </span>
-            ) : currentSegment?.speaker === 'Armando' ? (
-              <span className="px-3 py-1 rounded-full bg-blue-100 text-blue-800 text-sm flex items-center">
-                <span className="w-2 h-2 bg-blue-500 rounded-full mr-2"></span>
-                Turno de Armando
-              </span>
-            ) : (
-              <span className="px-3 py-1 rounded-full bg-gray-100 text-gray-600 text-sm">
-                En espera
-              </span>
-            )}
-          </div>
-          
-          {currentSegment && (
-            <div className={`p-4 rounded-lg mb-4 ${
-              currentSegment.speaker === 'LIA' ? 'bg-blue-50 border-l-4 border-blue-400' : 'bg-gray-50 border-l-4 border-gray-400'
-            }`}>
-              <div className="flex items-center mb-2">
-                <span className={`font-medium text-lg ${
-                  currentSegment.speaker === 'LIA' ? 'text-blue-600' : 'text-gray-700'
-                }`}>
-                  {currentSegment.speaker}
-                </span>
-                <span className="text-xs text-gray-500 ml-2">
-                  Escena {currentSegment.scene}
-                </span>
-              </div>
-              
-              <p className="text-gray-800">{currentSegment.text}</p>
-              
-              {currentSegment.speaker === 'LIA' && currentSegment.responseVoice && (
-                <div className="mt-3 flex justify-end">
-                  <VoiceSynthesis 
-                    text={currentSegment.text}
-                    autoPlay={true} 
-                    onPlayStart={() => setIsLIASpeaking(true)}
-                    onPlayEnd={handleLIASpeechEnd}
-                  />
-                </div>
-              )}
-            </div>
-          )}
-          
-          {/* Controles de voz para Armando */}
-          <div className="flex justify-center mt-6">
-            {shouldShowVoiceControls() ? (
-              <div className="flex flex-col items-center">
-                <p className="text-sm text-gray-600 mb-2">
-                  {isLIASpeaking ? 
-                    "LIA está hablando..." : 
-                    "Haz clic en el micrófono para continuar"
-                  }
-                </p>
-                <VoiceRecognition 
-                  onResult={handleVoiceResult} 
-                  onSegmentMatch={handleSegmentMatch} 
-                />
-              </div>
-            ) : (
-              <button 
-                onClick={() => scriptManager.nextSegment()}
-                className="w-12 h-12 rounded-full bg-gray-200 text-gray-600 hover:bg-gray-300 flex items-center justify-center"
-                title="Avanzar (solo modo desarrollo)"
-                style={{ display: process.env.NODE_ENV === 'development' ? 'flex' : 'none' }}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   );
 };

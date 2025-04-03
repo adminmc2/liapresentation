@@ -1,5 +1,3 @@
-// src/lib/services/enhanced-script-manager.ts
-
 import { ScriptSegment, demoScript } from '../data/script-data';
 
 // Interfaz para escenas (opcional, para organización mejorada)
@@ -9,6 +7,14 @@ export interface ScriptScene {
   segments: ScriptSegment[];
 }
 
+export interface VisualizationData {
+  type?: string;
+  content?: any;
+  timestamp: number;
+  segmentId: string;
+  isPersistent?: boolean; // Nuevo campo para indicar si la visualización es persistente
+}
+
 export interface ScriptState {
   segments: ScriptSegment[];
   currentIndex: number;
@@ -16,19 +22,28 @@ export interface ScriptState {
   // Campos opcionales para soporte de escenas
   scenes?: ScriptScene[];
   currentSceneIndex?: number;
+  // Nuevos campos para visualización
+  currentVisualization?: VisualizationData;
+  lastVisualization?: VisualizationData; // Almacena la última visualización mostrada
+  lastSpokenPhrase?: string;
 }
 
 export class EnhancedScriptManager {
   private state: ScriptState;
   private listeners: ((state: ScriptState) => void)[] = [];
   private segmentToSceneMap: Map<string, number> = new Map();
+  private currentSpeechText: string = ''; // Almacena el texto actual que se está hablando
+  private phraseCheckInterval: number | null = null;
 
   constructor(initialScript: ScriptSegment[] = demoScript) {
     // Mantiene la compatibilidad con la estructura actual plana
     this.state = {
       segments: initialScript,
       currentIndex: 0,
-      isActive: false
+      isActive: false,
+      currentVisualization: undefined,
+      lastVisualization: undefined,
+      lastSpokenPhrase: ''
     };
     
     // Opcionalmente, podríamos convertir los segmentos en escenas estructuradas
@@ -108,6 +123,12 @@ export class EnhancedScriptManager {
       // Actualizar el índice de escena si es necesario
       this.updateCurrentSceneIndex();
       
+      // Manejar persistencia de visualización
+      this.handleVisualizationPersistence();
+      
+      // Resetear estado de seguimiento de frases
+      this.resetPhraseTracking();
+      
       this.notifyListeners();
       return this.getCurrentSegment();
     }
@@ -122,6 +143,12 @@ export class EnhancedScriptManager {
       // Actualizar el índice de escena si es necesario
       this.updateCurrentSceneIndex();
       
+      // Manejar persistencia de visualización
+      this.handleVisualizationPersistence();
+      
+      // Resetear estado de seguimiento de frases
+      this.resetPhraseTracking();
+      
       this.notifyListeners();
       return this.getCurrentSegment();
     }
@@ -135,6 +162,12 @@ export class EnhancedScriptManager {
       
       // Actualizar el índice de escena si es necesario
       this.updateCurrentSceneIndex();
+      
+      // Manejar persistencia de visualización
+      this.handleVisualizationPersistence();
+      
+      // Resetear estado de seguimiento de frases
+      this.resetPhraseTracking();
       
       this.notifyListeners();
       return this.getCurrentSegment();
@@ -250,6 +283,8 @@ export class EnhancedScriptManager {
       this.state.currentSceneIndex = 0;
     }
     this.state.isActive = true;
+    this.resetPhraseTracking();
+    this.clearAllVisualizations(); // Limpiar todas las visualizaciones al iniciar
     this.notifyListeners();
     return this.getCurrentSegment();
   }
@@ -269,7 +304,215 @@ export class EnhancedScriptManager {
       this.segmentToSceneMap.clear();
     }
     
+    this.resetPhraseTracking();
+    this.clearAllVisualizations(); // Limpiar todas las visualizaciones al cargar nuevo guión
     this.notifyListeners();
+  }
+
+  // ----- MÉTODOS PARA CONTROL DE VISUALIZACIÓN -----
+
+  // Establecer el texto actual que se está hablando
+  setCurrentSpeechText(text: string): void {
+    this.currentSpeechText = text;
+    this.checkForTriggerPhrases();
+  }
+
+  // Actualizar cuando se ha hablado más texto
+  updateSpokenText(additionalText: string): void {
+    this.state.lastSpokenPhrase = additionalText;
+    this.checkForTriggerPhrases();
+    this.notifyListeners();
+  }
+
+  // Verificar si el texto actual contiene alguna frase disparadora
+  private checkForTriggerPhrases(): void {
+    const currentSegment = this.getCurrentSegment();
+    
+    if (!currentSegment || !currentSegment.visualType || !currentSegment.visualContent) {
+      return;
+    }
+    
+    // Verificar si hay una frase específica que deba activar la visualización
+    if (currentSegment.visualTiming === 'onPhrase' && 
+        currentSegment.visualTriggerPhrase && 
+        this.currentSpeechText.includes(currentSegment.visualTriggerPhrase)) {
+      
+      // Evitar activar múltiples veces la misma visualización
+      if (!this.state.currentVisualization || 
+          this.state.currentVisualization.segmentId !== currentSegment.id) {
+        this.triggerVisualization(currentSegment);
+      }
+    }
+  }
+
+  // Activar visualización para un segmento específico
+  triggerVisualization(segment: ScriptSegment): void {
+    if (!segment.visualType || !segment.visualContent) return;
+    
+    // Guardar la visualización actual como última visualización antes de reemplazarla
+    // Solo guardamos si no es persistente o si la nueva visualización es explícita
+    if (this.state.currentVisualization && 
+        (!this.state.currentVisualization.isPersistent || 
+          (segment.visualType && segment.visualContent))) {
+      this.state.lastVisualization = {...this.state.currentVisualization};
+    }
+    
+    // Crear la nueva visualización con el flag de persistencia del segmento
+    const visualization: VisualizationData = {
+      type: segment.visualType,
+      content: segment.visualContent,
+      timestamp: Date.now(),
+      segmentId: segment.id,
+      isPersistent: segment.visualPersist || false
+    };
+    
+    this.state.currentVisualization = visualization;
+    this.notifyListeners();
+  }
+
+  // Nuevo método: Determinar si debemos usar una visualización persistente para el segmento actual
+  shouldUsePersistentVisualization(segment: ScriptSegment): boolean {
+    // Si el segmento actual tiene visualización explícita, no usar persistente
+    if (segment.visualType && segment.visualContent) {
+      return false;
+    }
+    
+    // Si hay una visualización persistente activa
+    if (this.state.currentVisualization?.isPersistent) {
+      // Si estamos en una nueva escena, quizás queremos detener la persistencia
+      const currentSceneIndex = segment.scene;
+      const persistentVisualizationSegment = this.state.segments.find(
+        s => s.id === this.state.currentVisualization?.segmentId
+      );
+      
+      if (persistentVisualizationSegment) {
+        const persistentSceneIndex = persistentVisualizationSegment.scene;
+        
+        // Si la visualización persistente es de otra escena, no usarla
+        if (currentSceneIndex !== persistentSceneIndex) {
+          return false;
+        }
+      }
+      
+      // En otro caso, sí usar la visualización persistente
+      return true;
+    }
+    
+    return false;
+  }
+
+  // Manejar la persistencia de visualizaciones al cambiar de segmento
+  private handleVisualizationPersistence(): void {
+    const currentSegment = this.getCurrentSegment();
+    if (!currentSegment) return;
+    
+    // Determinar si debemos usar una visualización persistente
+    const shouldUsePersistent = this.shouldUsePersistentVisualization(currentSegment);
+    
+    // Si el segmento actual tiene su propia visualización, usarla (reemplazará cualquier persistente)
+    if (currentSegment.visualType && currentSegment.visualContent) {
+      // La visualización del segmento se aplicará cuando sea necesario
+      return;
+    }
+    
+    // Si no debemos usar una persistente, limpiar la visualización actual (si no es persistente)
+    if (!shouldUsePersistent && this.state.currentVisualization && !this.state.currentVisualization.isPersistent) {
+      this.state.lastVisualization = {...this.state.currentVisualization};
+      this.state.currentVisualization = undefined;
+    }
+  }
+
+  // Limpiar la visualización actual
+  clearVisualization(): void {
+    // No limpiar visualizaciones persistentes
+    if (this.state.currentVisualization?.isPersistent) {
+      return; // Mantener visualizaciones persistentes
+    }
+    
+    if (this.state.currentVisualization) {
+      this.state.lastVisualization = {...this.state.currentVisualization};
+      this.state.currentVisualization = undefined;
+      this.notifyListeners();
+    }
+  }
+
+  // Limpiar todas las visualizaciones (actual y última)
+  clearAllVisualizations(): void {
+    this.state.lastVisualization = undefined;
+    this.state.currentVisualization = undefined;
+    this.notifyListeners();
+  }
+
+  // Restaurar la última visualización
+  restoreLastVisualization(): void {
+    if (this.state.lastVisualization) {
+      this.state.currentVisualization = {...this.state.lastVisualization};
+      this.state.lastVisualization = undefined;
+      this.notifyListeners();
+    }
+  }
+
+  // Comprobar si una visualización debe mostrarse
+  shouldShowVisualization(status: string): boolean {
+    const segment = this.getCurrentSegment();
+    if (!segment) return false;
+    
+    // Si debemos usar una visualización persistente, mostrarla
+    if (this.shouldUsePersistentVisualization(segment)) {
+      return true;
+    }
+    
+    // Si el segmento actual no tiene visualización, no mostrar nada
+    if (!segment.visualType || !segment.visualContent) return false;
+    
+    switch (segment.visualTiming) {
+      case 'start':
+        return segment.speaker === 'LIA' && status === 'speaking';
+      
+      case 'middle':
+        return segment.speaker === 'LIA' && status === 'speaking' && 
+               this.currentSpeechText.length > segment.text.length / 3;
+      
+      case 'end':
+        return segment.speaker === 'LIA' && status === 'waiting';
+      
+      case 'afterResponse':
+        return segment.speaker === 'Armando' && status === 'processing';
+      
+      case 'onPhrase':
+        // Esta visualización se maneja en checkForTriggerPhrases
+        return false;
+      
+      default:
+        // Si no hay timing específico, mostrar por defecto
+        return true;
+    }
+  }
+
+  // Verificar si hay una visualización persistente activa
+  hasPersistentVisualization(): boolean {
+    return !!this.state.currentVisualization?.isPersistent;
+  }
+
+  // Iniciar seguimiento de frases para detección
+  startPhraseTracking(): void {
+    this.resetPhraseTracking();
+    
+    // Verificar cada 500ms si hay frases que activen visualizaciones
+    this.phraseCheckInterval = window.setInterval(() => {
+      this.checkForTriggerPhrases();
+    }, 500);
+  }
+
+  // Detener y limpiar el seguimiento de frases
+  resetPhraseTracking(): void {
+    this.currentSpeechText = '';
+    this.state.lastSpokenPhrase = '';
+    
+    if (this.phraseCheckInterval !== null) {
+      clearInterval(this.phraseCheckInterval);
+      this.phraseCheckInterval = null;
+    }
   }
 
   // Suscribirse a cambios
