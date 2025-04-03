@@ -52,19 +52,21 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   
-  // Paleta de colores inspirada en Apple/Claude
+  // Paleta de colores inspirada en la imagen compartida - rosa suave a azul claro
   const colors = {
     background: '#ffffff',
-    userBubble: '#007AFF',
-    assistantBubble: '#F2F2F7',
+    userBubble: 'rgba(244, 114, 182, 0.85)', // Rosa (pink-500 de Tailwind)
+    assistantBubble: 'rgba(248, 250, 252, 0.95)', // Blanco muy suave con toque azulado
     userText: '#ffffff',
-    assistantText: '#000000',
-    timestamp: '#8E8E93',
-    statusIdle: '#8E8E93',
-    statusListening: '#FF9500',
-    statusProcessing: '#AF52DE',
-    statusSpeaking: '#30D158',
-    statusWaiting: '#FF3B30'
+    assistantText: '#1a1a1a',
+    timestamp: '#94a3b8', // slate-400 de Tailwind
+    statusIdle: '#94a3b8',
+    statusListening: '#f59e0b', // amber-500 de Tailwind
+    statusProcessing: '#ec4899', // pink-500 de Tailwind
+    statusSpeaking: '#10b981', // emerald-500 de Tailwind
+    statusWaiting: '#ef4444', // red-500 de Tailwind
+    accentLight: 'rgba(244, 114, 182, 0.2)', // Rosa pálido para bordes y acentos suaves
+    accentMedium: 'rgba(244, 114, 182, 0.4)' // Rosa medio para interacciones
   };
   
   // Efecto para hacer scroll al último mensaje
@@ -184,9 +186,21 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   };
 
   return (
-    <div className={`flex flex-col h-full bg-white rounded-xl shadow-sm overflow-hidden ${className}`}>
+    <div 
+      className={`flex flex-col h-full overflow-hidden rounded-xl ${className}`}
+      style={{ 
+        background: 'rgba(255, 255, 255, 0.85)',
+        backdropFilter: 'blur(10px)'
+      }}
+    >
       {/* Cabecera del chat */}
-      <header className="p-4 border-b flex items-center justify-between bg-white">
+      <header 
+        className="p-4 flex items-center justify-between border-b"
+        style={{
+          borderColor: 'rgba(244, 114, 182, 0.1)',
+          background: 'linear-gradient(to right, rgba(253, 242, 248, 0.5), rgba(242, 240, 253, 0.5))'
+        }}
+      >
         <h2 className="text-lg font-semibold text-gray-900">Conversación</h2>
         
         {status !== 'idle' && (
@@ -196,7 +210,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
             {status === 'speaking' && (
               <button
                 onClick={handleToggleMute}
-                className="p-1 rounded-full hover:bg-gray-100 transition-colors"
+                className="p-1 rounded-full hover:bg-pink-50 transition-colors"
                 title={isMuted ? "Activar audio" : "Silenciar"}
               >
                 {isMuted ? (
@@ -211,7 +225,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
       </header>
 
       {/* Área de mensajes */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gradient-to-b from-white/40 to-white/20">
         <AnimatePresence>
           {messages.map((message) => (
             <motion.div
@@ -227,19 +241,22 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 {/* Identificador del hablante (solo asistente) */}
                 {message.role === 'assistant' && (
                   <div className="ml-2 mb-1 flex items-center">
-                    <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center mr-1">
-                      <span className="text-xs font-medium text-blue-600">L</span>
+                    <div 
+                      className="w-6 h-6 rounded-full flex items-center justify-center mr-1"
+                      style={{ background: 'rgba(244, 114, 182, 0.2)' }}
+                    >
+                      <span className="text-xs font-medium text-pink-600">L</span>
                     </div>
                     <span className="text-xs text-gray-500">{speakerName.assistant}</span>
                   </div>
                 )}
                 
                 {/* Contenido del mensaje */}
-                <div
-                  className={`px-4 py-2.5 rounded-2xl ${
+                <motion.div
+                  className={`px-4 py-2.5 rounded-2xl shadow-sm ${
                     message.role === 'user'
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-gray-100 text-black'
+                      ? 'text-white'
+                      : 'text-black'
                   }`}
                   style={{
                     backgroundColor:
@@ -253,10 +270,15 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     borderRadius: message.role === 'user' 
                       ? '18px 18px 4px 18px' 
                       : '18px 18px 18px 4px',
+                    border: message.role === 'assistant' ? '1px solid rgba(244, 114, 182, 0.1)' : 'none',
+                    boxShadow: message.role === 'user' 
+                      ? '0 2px 5px rgba(244, 114, 182, 0.2)' 
+                      : '0 2px 5px rgba(0, 0, 0, 0.03)'
                   }}
+                  whileHover={{ scale: 1.01 }}
                 >
                   {message.content}
-                </div>
+                </motion.div>
                 
                 {/* Hora del mensaje */}
                 <div
@@ -277,17 +299,29 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
       {/* Área de entrada (opcional) */}
       {showControls && (
-        <div className="p-4 border-t bg-white">
+        <div 
+          className="p-4 border-t"
+          style={{
+            borderColor: 'rgba(244, 114, 182, 0.1)',
+            background: 'linear-gradient(to right, rgba(253, 242, 248, 0.5), rgba(242, 240, 253, 0.5))'
+          }}
+        >
           <div className="flex items-center justify-between">
             {/* Botón del micrófono */}
             <button
               onClick={handleMicrophoneClick}
               disabled={status === 'processing'}
-              className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
+              className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors shadow-sm ${
                 status === 'listening'
                   ? 'bg-red-500 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  : 'bg-white text-gray-700 hover:bg-pink-50 border'
               }`}
+              style={{
+                borderColor: status === 'listening' ? 'transparent' : 'rgba(244, 114, 182, 0.2)',
+                boxShadow: status === 'listening' 
+                  ? '0 0 0 3px rgba(239, 68, 68, 0.2)' 
+                  : '0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03)'
+              }}
               title="Activar micrófono"
             >
               <Mic className="h-5 w-5" />
@@ -300,7 +334,11 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 type="text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full p-2 border rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-pink-300 focus:border-transparent bg-white shadow-sm"
+                style={{
+                  borderColor: 'rgba(244, 114, 182, 0.2)',
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03)'
+                }}
                 placeholder="Escribe un mensaje..."
               />
             </form>
@@ -309,11 +347,19 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
             <button
               onClick={handleSendMessage}
               disabled={inputText.trim() === ''}
-              className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
+              className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors shadow-sm ${
                 inputText.trim() === ''
                   ? 'bg-gray-100 text-gray-400'
-                  : 'bg-blue-500 text-white hover:bg-blue-600'
+                  : 'text-white'
               }`}
+              style={{
+                background: inputText.trim() === '' 
+                  ? 'rgba(243, 244, 246, 0.8)'
+                  : 'linear-gradient(135deg, rgba(244, 114, 182, 0.9) 0%, rgba(165, 180, 252, 0.9) 100%)',
+                boxShadow: inputText.trim() !== '' 
+                  ? '0 1px 3px rgba(244, 114, 182, 0.3), 0 1px 2px rgba(244, 114, 182, 0.2)' 
+                  : 'none'
+              }}
               title="Enviar mensaje"
             >
               <ArrowRight className="h-5 w-5" />
@@ -324,17 +370,23 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
           <div className="flex justify-center mt-4 space-x-2 opacity-40 hover:opacity-100 transition-opacity">
             <button
               onClick={onManualAdvance}
-              className="p-1 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
+              className="p-1 rounded-full bg-white hover:bg-pink-50 transition-colors border"
+              style={{
+                borderColor: 'rgba(244, 114, 182, 0.2)'
+              }}
               title="Avanzar manualmente"
             >
-              <ArrowRight className="h-4 w-4 text-gray-600" />
+              <ArrowRight className="h-4 w-4 text-pink-500" />
             </button>
             <button
               onClick={onRepeatSegment}
-              className="p-1 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
+              className="p-1 rounded-full bg-white hover:bg-pink-50 transition-colors border"
+              style={{
+                borderColor: 'rgba(244, 114, 182, 0.2)'
+              }}
               title="Repetir segmento"
             >
-              <RotateCcw className="h-4 w-4 text-gray-600" />
+              <RotateCcw className="h-4 w-4 text-pink-500" />
             </button>
           </div>
         </div>
