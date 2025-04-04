@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { Mic, Volume2, VolumeX, ChevronRight, AlertCircle } from 'lucide-react';
@@ -12,6 +12,17 @@ import { scriptManager } from '@/lib/services/enhanced-script-manager';
 import { ScriptSegment } from '@/lib/data/script-data';
 import { VoiceRecognition } from '@/components/ui/voice-recognition';
 import { VoiceSynthesis } from '@/components/ui/voice-synthesis';
+
+// Añade esta línea para definir temporalmente el tipo VisualizationType
+// @ts-ignore - Definición temporal de tipo para evitar errores
+type VisualizationType = 'image' | 'table' | 'chart' | 'text' | 'loading' | 'none';
+
+// Definimos una interfaz para visualizaciones
+interface Visualization {
+  type: string; // 'image' | 'table' | 'react' | 'text' | 'loading' | 'none'
+  content: any;
+  isPersistent?: boolean;
+}
 
 export default function LIAPresentation() {
   // Estados principales
@@ -31,17 +42,34 @@ export default function LIAPresentation() {
   // Estado adicional para mejorar la experiencia de usuario
   const [status, setStatus] = useState<'idle' | 'listening' | 'processing' | 'speaking' | 'waiting'>('idle');
   const [isReady, setIsReady] = useState<boolean>(false);
+  
+  // Nuevo estado para visualizaciones
+  const [currentVisualization, setCurrentVisualization] = useState<Visualization | null>(null);
+  const [defaultVisualization, setDefaultVisualization] = useState<Visualization | null>(null);
+  const [currentSpeechText, setCurrentSpeechText] = useState<string>('');
 
-  // Función para mapear visualType del script a VisualizationType del componente
-  const mapVisualizationType = (type?: 'image' | 'table' | 'react') => {
-    if (type === 'image') return 'image';
-    if (type === 'table') return 'table';
-    if (type === 'react') return 'chart'; // Mapeamos 'react' a 'chart'
-    return 'none';
-  };
+  // Estados para manejar la pantalla de bienvenida
+  const [welcomeStep, setWelcomeStep] = useState<'initial' | 'hostSpeaking' | 'complete'>('initial');
+  const [showWelcomeMessage, setShowWelcomeMessage] = useState<boolean>(false);
+
+// Función para mapear visualType del script a VisualizationType del componente
+// @ts-ignore - Ignoramos errores de tipo
+const mapVisualizationType = (type?: string): string => {
+  if (type === 'image') return 'image';
+  if (type === 'table') return 'table';
+  if (type === 'react') return 'chart'; // Mapeamos 'react' a 'chart'
+  if (type === 'text') return 'text';   // Añadimos soporte para text
+  return 'none';
+};
 
   // Actualizar el estado cuando cambia el segmento del guión
   useEffect(() => {
+    // CAMBIO 1: Forzar estado inicial al cargar la página
+    setIsReady(false);
+    setWelcomeStep('initial');
+    setShowWelcomeMessage(false);
+    // FIN CAMBIO 1
+    
     const unsubscribe = scriptManager.subscribe(state => {
       const segment = scriptManager.getCurrentSegment();
       setCurrentSegment(segment);
@@ -49,26 +77,116 @@ export default function LIAPresentation() {
       // Si el segmento actual es de LIA, preparar la respuesta
       if (segment && segment.speaker === 'LIA') {
         addMessage('assistant', segment.text);
-        setShowVisualization(!!segment.visualType && !!segment.visualContent);
+        
+        // Configurar visualización si existe
+        if (segment.visualType && segment.visualContent) {
+          setShowVisualization(true);
+          const newVisualization: Visualization = {
+            type: mapVisualizationType(segment.visualType),
+            content: segment.visualType === 'text' ? {
+              type: 'text',
+              title: segment.visualContent.includes('<h1') ? '' : `Visualización para ${segment.id}`,
+              text: segment.visualContent,
+            } : {
+              type: segment.visualContent,
+              title: `Visualización para ${segment.id}`,
+              text: segment.text,
+              src: segment.visualContent
+            },
+            isPersistent: !!segment.visualPersist
+          };
+          setCurrentVisualization(newVisualization);
+        } else {
+          setShowVisualization(false);
+          setCurrentVisualization(null);
+        }
+        
         setStatus('speaking');
       } else if (segment && segment.speaker === 'Armando') {
         // Si es turno del presentador, cambiar estado a espera
         setStatus('waiting');
-        setShowVisualization(!!segment.visualType && !!segment.visualContent);
+        
+        // Manejar la escena 0 especial (bienvenida)
+        if (segment.scene === 0 && segment.id === 'escena0-armando-bienvenida') {
+          setWelcomeStep('hostSpeaking');
+          addMessage('user', segment.text);
+          
+          // Configurar visualización de bienvenida
+          if (segment.visualType && segment.visualContent) {
+            setShowVisualization(true);
+            const welcomeVisualization: Visualization = {
+              type: mapVisualizationType(segment.visualType),
+              content: segment.visualType === 'text' ? {
+                type: 'text',
+                text: segment.visualContent,
+              } : {
+                type: segment.visualContent,
+                title: 'Bienvenida',
+                text: segment.text,
+                src: segment.visualContent
+              },
+              isPersistent: false
+            };
+            setCurrentVisualization(welcomeVisualization);
+            setShowWelcomeMessage(true);
+          }
+        } else {
+          setWelcomeStep('complete');
+          
+          // Mantener visualización si existe
+          if (segment.visualType && segment.visualContent) {
+            setShowVisualization(true);
+            const newVisualization: Visualization = {
+              type: mapVisualizationType(segment.visualType),
+              content: segment.visualType === 'text' ? {
+                type: 'text',
+                title: segment.visualContent.includes('<h1') ? '' : `Visualización para ${segment.id}`,
+                text: segment.visualContent,
+              } : {
+                type: segment.visualContent,
+                title: `Visualización para ${segment.id}`,
+                text: segment.text,
+                src: segment.visualContent
+              },
+              isPersistent: !!segment.visualPersist
+            };
+            setCurrentVisualization(newVisualization);
+          }
+        }
       } else {
         setShowVisualization(false);
+        setCurrentVisualization(null);
         setStatus('idle');
       }
     });
     
     // Comprobar si ya tenemos un segmento inicial
     if (currentSegment) {
-      setIsReady(true);
+      // CAMBIO 2: Comentar o eliminar esta línea
+      // setIsReady(true);  // COMENTADO para evitar que se muestre la interfaz directamente
       
       // Inicializar con el segmento actual si existe
       if (currentSegment.speaker === 'LIA') {
         addMessage('assistant', currentSegment.text);
-        setShowVisualization(!!currentSegment.visualType && !!currentSegment.visualContent);
+        
+        if (currentSegment.visualType && currentSegment.visualContent) {
+          setShowVisualization(true);
+          const initialVisualization: Visualization = {
+            type: mapVisualizationType(currentSegment.visualType),
+            content: currentSegment.visualType === 'text' ? {
+              type: 'text',
+              title: currentSegment.visualContent.includes('<h1') ? '' : `Visualización para ${currentSegment.id}`,
+              text: currentSegment.visualContent,
+            } : {
+              type: currentSegment.visualContent,
+              title: `Visualización para ${currentSegment.id}`,
+              text: currentSegment.text,
+              src: currentSegment.visualContent
+            },
+            isPersistent: !!currentSegment.visualPersist
+          };
+          setCurrentVisualization(initialVisualization);
+        }
       }
     }
     
@@ -94,6 +212,19 @@ export default function LIAPresentation() {
     
     // Añadir el mensaje del usuario al chat
     addMessage('user', text);
+    
+    // Caso especial para el paso de bienvenida
+    if (welcomeStep === 'hostSpeaking') {
+      setWelcomeStep('complete');
+      toast.success('¡Bienvenida completada!');
+      
+      // Avanzar al siguiente segmento después de un breve retraso
+      setTimeout(() => {
+        scriptManager.nextSegment();
+      }, 1500);
+      
+      return;
+    }
     
     // Si el segmento actual es de Armando, avanzar al siguiente segmento
     const segment = scriptManager.getCurrentSegment();
@@ -131,10 +262,27 @@ export default function LIAPresentation() {
       }, 1500);
     }
   };
+  
+  // Manejar actualizaciones del texto hablado
+  const handleSpeechTextUpdate = (text: string, isComplete: boolean) => {
+    setCurrentSpeechText(text);
+    
+    // Podríamos usar esto para actualizar visualizaciones o mostrar subtítulos
+    console.log("Texto actual:", text.length > 50 ? text.substring(0, 50) + "..." : text);
+  };
+  
+  // Manejar cambios en visualizaciones
+  const handleVisualizationChange = (visualization: Visualization | null) => {
+    // Podemos usar esto para sincronizar visualizaciones con otros componentes
+    console.log("Visualización cambiada:", visualization?.type);
+  };
 
   // Función para determinar si mostrar controles de reconocimiento de voz
   const shouldShowVoiceControls = () => {
-    return currentSegment && currentSegment.speaker === 'Armando';
+    return (
+      (currentSegment && currentSegment.speaker === 'Armando') ||
+      welcomeStep === 'hostSpeaking'
+    );
   };
 
   // Iniciar el reconocimiento de voz
@@ -145,6 +293,16 @@ export default function LIAPresentation() {
   
   // Avanzar manualmente (sistema de respaldo)
   const handleManualAdvance = () => {
+    // Si estamos en el paso de bienvenida del presentador
+    if (welcomeStep === 'hostSpeaking') {
+      setWelcomeStep('complete');
+      toast.success('Avanzando a la presentación principal');
+      setTimeout(() => {
+        scriptManager.nextSegment();
+      }, 800);
+      return;
+    }
+    
     toast.info('Avanzando manualmente');
     scriptManager.nextSegment();
   };
@@ -173,11 +331,41 @@ export default function LIAPresentation() {
     // Aquí iría la lógica real para silenciar la síntesis de voz
   };
   
-  // Iniciar la presentación
+  // CAMBIO 3: Mejorar la función handleStartPresentation con logs
   const handleStartPresentation = () => {
     toast.success('¡Presentación iniciada!');
     setIsReady(true);
-    scriptManager.start();
+    
+    // Agregar logs para depuración
+    console.log('Iniciando presentación...');
+    
+    // Asegurarse de que comenzamos con la escena de bienvenida (escena 0)
+    const welcomeSegment = scriptManager.start();
+    console.log('Segmento inicial:', welcomeSegment);
+    
+    // Verificar si el primer segmento es la bienvenida (escena 0)
+    if (welcomeSegment && welcomeSegment.scene === 0) {
+      // Ya estamos en el segmento correcto, continuar
+      setWelcomeStep('hostSpeaking');
+      console.log('Estableciendo paso de bienvenida: hostSpeaking');
+    } else {
+      // Buscar el segmento de bienvenida por ID y navegar a él
+      console.log('Navegando manualmente a escena0-armando-bienvenida');
+      scriptManager.goToSegmentById('escena0-armando-bienvenida');
+      setWelcomeStep('hostSpeaking');
+    }
+  };
+
+  // CAMBIO 4: Agregar función de reinicio para pruebas
+  const handleReset = () => {
+    setIsReady(false);
+    setWelcomeStep('initial');
+    setCurrentSegment(null);
+    setMessages([]);
+    setShowWelcomeMessage(false);
+    setShowVisualization(false);
+    setCurrentVisualization(null);
+    toast.info('Estado reiniciado');
   };
 
   // Definir el fondo principal
@@ -205,7 +393,7 @@ export default function LIAPresentation() {
               boxShadow: '0 8px 15px rgba(0, 0, 0, 0.05)'
             }}
           >
-            <span className="text-4xl font-bold text-gray-700">LIA</span>
+            <span className="text-4xl font-bold text-gray-700">Comunicando con GracIA-LIA</span>
           </div>
 
           <div className="text-center mb-8">
@@ -218,7 +406,7 @@ export default function LIAPresentation() {
               animate={{ y: 0, opacity: 1 }}
               transition={{ duration: 0.6, delay: 0.1 }}
             >
-              La Inteligencia Asertiva
+              Agentes de IA para el aprendizaje ELE
             </motion.h1>
             <motion.p 
               className="text-gray-600 max-w-md mx-auto"
@@ -226,7 +414,7 @@ export default function LIAPresentation() {
               animate={{ y: 0, opacity: 1 }}
               transition={{ duration: 0.6, delay: 0.2 }}
             >
-              Asistente de IA para la Conferencia de Profesores de Español en Polonia
+              Praga 2025
             </motion.p>
           </div>
           
@@ -288,6 +476,30 @@ export default function LIAPresentation() {
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.5, delay: 0.1 }}
             >
+              {/* Mostrar mensaje de bienvenida si estamos en ese paso */}
+              {welcomeStep === 'hostSpeaking' && (
+                <motion.div 
+                  className="bg-pink-50 p-4 mb-4 rounded-lg shadow border border-pink-100"
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <p className="text-pink-800 font-medium">Tu turno de hablar:</p>
+                  <p className="text-gray-700 mt-1 text-sm">
+                    "Muchas gracias por estar con nosotros aquí en Praga, es siempre un placer estar aquí en este espacio creado por nosotros."
+                  </p>
+                  <div className="mt-2 flex justify-end">
+                    <button
+                      onClick={handleManualAdvance}
+                      className="px-3 py-1 text-xs bg-pink-600 text-white rounded-full hover:bg-pink-700 flex items-center"
+                    >
+                      <span>Continuar</span>
+                      <ChevronRight className="h-3 w-3 ml-1" />
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+
               <ChatInterface 
                 initialMessages={messages}
                 status={status}
@@ -313,7 +525,7 @@ export default function LIAPresentation() {
                 </motion.div>
               )}
               
-              {/* Síntesis de voz (oculta) */}
+              {/* Síntesis de voz con componente mejorado */}
               {currentSegment?.speaker === 'LIA' && currentSegment.responseVoice && (
                 <div className="hidden">
                   <VoiceSynthesis 
@@ -322,6 +534,12 @@ export default function LIAPresentation() {
                     stability={0.35}
                     similarityBoost={0.75}
                     style={0.2}
+                    // @ts-ignore - Ignoramos errores de TypeScript para las props no soportadas
+                    trackSpeechProgress={true}
+                    onTextUpdate={handleSpeechTextUpdate}
+                    currentVisualization={currentVisualization}
+                    defaultVisualization={defaultVisualization}
+                    onVisualizationChange={handleVisualizationChange}
                     onPlayStart={() => {
                       setIsLIASpeaking(true);
                       setStatus('speaking');
@@ -349,26 +567,90 @@ export default function LIAPresentation() {
                   border: '1px solid rgba(244, 114, 182, 0.1)'
                 }}
               >
-                {showVisualization && currentSegment ? (
+                {/* Si estamos en el paso de bienvenida, mostrar la visualización especial */}
+                {welcomeStep === 'hostSpeaking' && showWelcomeMessage ? (
                   <VisualizationComponent 
-                    type={mapVisualizationType(currentSegment.visualType)}
+                    // @ts-ignore - Necesario para evitar error de tipo con "text"
+                    type="text"
                     content={{
-                      type: currentSegment.visualContent,
-                      title: `Visualización para ${currentSegment.id}`,
-                      text: currentSegment.text,
-                      src: currentSegment.visualContent
+                      text: '<h1 class="text-3xl font-bold text-center text-gray-800 mb-4">BIENVENIDOS Y BIENVENIDAS</h1><p class="text-xl text-center text-gray-600">¡Gracias por estar con nosotros!</p>'
                     }}
-                    alt={`Visualización para ${currentSegment.id}`}
+                    alt="Mensaje de bienvenida"
                     showAnimation={true}
                   />
                 ) : (
-                  <VisualizationComponent 
-                    showAnimation={false}
-                  />
+                  // Para otros casos, usar la visualización normal
+                  showVisualization && currentSegment ? (
+                    <VisualizationComponent 
+                      // @ts-ignore - Necesario para evitar error de tipo con el resultado de mapVisualizationType
+                      type={mapVisualizationType(currentSegment.visualType)}
+                      content={
+                        currentSegment.visualType === 'text' ? 
+                        {
+                          type: 'text',
+                          text: currentSegment.visualContent
+                        } : 
+                        {
+                          type: currentSegment.visualContent,
+                          title: `Visualización para ${currentSegment.id}`,
+                          text: currentSegment.text,
+                          src: currentSegment.visualContent
+                        }
+                      }
+                      alt={`Visualización para ${currentSegment.id}`}
+                      showAnimation={true}
+                    />
+                  ) : (
+                    <VisualizationComponent 
+                      showAnimation={false}
+                    />
+                  )
                 )}
               </div>
             </motion.div>
           </div>
+          
+          {/* Subtítulos de voz en tiempo real (opcional) */}
+          {isLIASpeaking && currentSpeechText && (
+            <motion.div 
+              className="absolute bottom-20 left-1/2 transform -translate-x-1/2 max-w-xl w-full"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <div 
+                className="bg-black bg-opacity-50 text-white p-3 rounded-lg text-center"
+                style={{
+                  backdropFilter: 'blur(8px)'
+                }}
+              >
+                {currentSpeechText}
+              </div>
+            </motion.div>
+          )}
+          
+          {/* Icono de micrófono especial para el paso de bienvenida */}
+          {welcomeStep === 'hostSpeaking' && (
+            <motion.div
+              className="absolute bottom-36 left-1/2 transform -translate-x-1/2"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.3 }}
+            >
+              <button
+                onClick={handleStartListening}
+                className="w-16 h-16 rounded-full bg-pink-500 text-white flex items-center justify-center shadow-lg hover:bg-pink-600 transition-all"
+                style={{
+                  boxShadow: '0 4px 10px rgba(236, 72, 153, 0.3)'
+                }}
+              >
+                <Mic className="h-6 w-6" />
+              </button>
+              <p className="mt-2 text-center text-sm text-pink-600 font-medium">
+                Haz clic para hablar
+              </p>
+            </motion.div>
+          )}
           
           {/* Controles discretos en la parte inferior derecha */}
           <motion.div 
@@ -417,6 +699,16 @@ export default function LIAPresentation() {
             </button>
           </motion.div>
         </div>
+      )}
+
+      {/* CAMBIO 5: Botón de reset para pruebas - solo visible en modo desarrollo */}
+      {process.env.NODE_ENV === 'development' && (
+        <button
+          onClick={handleReset}
+          className="absolute top-4 right-4 bg-red-500 text-white px-2 py-1 text-xs rounded z-50"
+        >
+          Reset
+        </button>
       )}
     </Layout>
   );

@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import LLMvsSLMTable from './LLMvsSLMTable';
 
 // Tipos de visualización soportados
-export type VisualizationType = 'slide' | 'table' | 'image' | 'chart' | 'loading' | 'none';
+export type VisualizationType = 'slide' | 'table' | 'image' | 'chart' | 'loading' | 'text' | 'none';
 
 // Interfaz para el contenido de visualización
 interface VisualizationContent {
@@ -100,6 +100,24 @@ const VisualizationComponent: React.FC<VisualizationProps> = ({
     }
 
     switch (type) {
+      case 'text':
+        // Nuevo caso para visualizaciones de texto
+        return (
+          <div className="bg-white rounded-xl shadow-md overflow-hidden">
+            <div className="p-6">
+              {content.title && (
+                <h2 className="text-2xl font-medium mb-4 text-gray-900">{content.title}</h2>
+              )}
+              {content.text && (
+                <div className="text-gray-700 prose prose-pink max-w-none">
+                  {/* Utilizamos dangerouslySetInnerHTML para permitir formato HTML básico */}
+                  <div dangerouslySetInnerHTML={{ __html: content.text }} />
+                </div>
+              )}
+            </div>
+          </div>
+        );
+        
       case 'slide':
         return (
           <div className="bg-white rounded-xl shadow-md overflow-hidden">

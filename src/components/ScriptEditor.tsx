@@ -18,6 +18,9 @@ export default function SimpleScriptEditor() {
   const [showTsCode, setShowTsCode] = useState(false);
   const [tsCodeContent, setTsCodeContent] = useState('');
   
+  // Estado para previsualización de texto formateado
+  const [showTextPreview, setShowTextPreview] = useState(false);
+  
   // Cargar el guión inicial
   useEffect(() => {
     // Intentar cargar desde localStorage primero
@@ -72,6 +75,7 @@ export default function SimpleScriptEditor() {
   const handleEditSegment = (segment: ScriptSegment, index: number) => {
     setEditingSegment({...segment, keywords: [...segment.keywords]});
     setIsEditing(true);
+    setShowTextPreview(false);
   };
 
   // Duplicar un segmento
@@ -150,12 +154,14 @@ export default function SimpleScriptEditor() {
     setScript(newScript);
     setEditingSegment(null);
     setIsEditing(false);
+    setShowTextPreview(false);
   };
 
   // Cancelar la edición
   const handleCancelEdit = () => {
     setEditingSegment(null);
     setIsEditing(false);
+    setShowTextPreview(false);
   };
 
   // Exportar el guión completo
@@ -193,8 +199,8 @@ export interface ScriptSegment {
   speaker: 'Armando' | 'LIA'; // Quién habla
   text: string;           // Texto que se dirá/mostrará
   keywords: string[];     // Palabras clave para reconocimiento
-  visualType?: 'image' | 'table' | 'react'; // Tipo de visualización
-  visualContent?: string; // URL de imagen o componente
+  visualType?: 'image' | 'table' | 'react' | 'text'; // Tipo de visualización (añadido 'text')
+  visualContent?: string; // URL de imagen, componente o texto a mostrar
   responseVoice?: boolean; // Si el texto debe ser leído por voz
   isActive?: boolean;     // Si es el segmento activo actualmente
   isCompleted?: boolean;  // Si ya se ha completado este segmento
@@ -280,8 +286,32 @@ export const demoScript: ScriptSegment[] = liaScript;`;
     const totalScenes = new Set(script.map(s => s.scene)).size;
     const visualSegments = script.filter(s => s.visualType).length;
     const persistentVisuals = script.filter(s => s.visualPersist).length;
+    const textVisuals = script.filter(s => s.visualType === 'text').length;
     
-    return { totalSegments, liaSegments, armandoSegments, totalScenes, visualSegments, persistentVisuals };
+    return { 
+      totalSegments, 
+      liaSegments, 
+      armandoSegments, 
+      totalScenes, 
+      visualSegments, 
+      persistentVisuals,
+      textVisuals
+    };
+  };
+
+  // Renderizar previsualización de texto formateado
+  const renderTextPreview = () => {
+    if (!editingSegment?.visualContent) return null;
+    
+    return (
+      <div className="mt-4 border rounded p-4">
+        <h3 className="text-sm font-medium mb-2">Previsualización:</h3>
+        <div 
+          className="prose prose-sm max-w-none" 
+          dangerouslySetInnerHTML={{ __html: editingSegment.visualContent }}
+        />
+      </div>
+    );
   };
 
   const stats = getScriptStats();
@@ -344,7 +374,7 @@ export const demoScript: ScriptSegment[] = liaScript;`;
         {/* Estadísticas */}
         <div className="bg-white p-4 rounded shadow mb-6">
           <h2 className="text-lg font-bold mb-3">Estadísticas del Guión</h2>
-          <div className="grid grid-cols-6 gap-4 text-center">
+          <div className="grid grid-cols-7 gap-4 text-center">
             <div className="p-3 bg-blue-100 rounded">
               <p className="text-2xl font-bold">{stats.totalSegments}</p>
               <p className="text-sm text-gray-500">Total de segmentos</p>
@@ -368,6 +398,10 @@ export const demoScript: ScriptSegment[] = liaScript;`;
             <div className="p-3 bg-indigo-100 rounded">
               <p className="text-2xl font-bold">{stats.persistentVisuals}</p>
               <p className="text-sm text-gray-500">Persistentes</p>
+            </div>
+            <div className="p-3 bg-teal-100 rounded">
+              <p className="text-2xl font-bold">{stats.textVisuals}</p>
+              <p className="text-sm text-gray-500">Texto formateado</p>
             </div>
           </div>
         </div>
@@ -458,7 +492,10 @@ export const demoScript: ScriptSegment[] = liaScript;`;
                   <div className="mb-2">
                     <span className="text-xs text-gray-500">Visualización:</span>
                     <p className="mt-1 text-sm">
-                      {segment.visualType} - {segment.visualContent}
+                      {segment.visualType === 'text' ? 
+                        <span className="text-teal-600 font-medium">Texto Formateado</span> : 
+                        `${segment.visualType} - ${segment.visualContent}`
+                      }
                       {segment.visualTiming && (
                         <span className="ml-2 px-1.5 py-0.5 text-xs bg-pink-100 text-pink-800 rounded">
                           {segment.visualTiming}
@@ -473,6 +510,15 @@ export const demoScript: ScriptSegment[] = liaScript;`;
                         </span>
                       )}
                     </p>
+                    {segment.visualType === 'text' && segment.visualContent && (
+                      <div className="mt-1 p-2 border border-teal-100 rounded bg-teal-50 max-w-lg max-h-20 overflow-y-auto">
+                        <div className="text-xs font-mono text-teal-800 whitespace-pre-wrap">
+                          {segment.visualContent.length > 100 ? 
+                            segment.visualContent.substring(0, 100) + '...' : 
+                            segment.visualContent}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -551,8 +597,13 @@ export const demoScript: ScriptSegment[] = liaScript;`;
                   <select
                     value={editingSegment.visualType || ''}
                     onChange={(e) => {
-                      const visualType = e.target.value ? e.target.value as 'image' | 'table' | 'react' : undefined;
+                      const visualType = e.target.value ? e.target.value as 'image' | 'table' | 'react' | 'text' : undefined;
                       setEditingSegment({...editingSegment, visualType});
+                      if (visualType === 'text') {
+                        setShowTextPreview(true);
+                      } else {
+                        setShowTextPreview(false);
+                      }
                     }}
                     className="w-full p-2 border rounded"
                   >
@@ -560,32 +611,57 @@ export const demoScript: ScriptSegment[] = liaScript;`;
                     <option value="image">Imagen</option>
                     <option value="table">Tabla</option>
                     <option value="react">Componente React</option>
+                    <option value="text">Texto Formateado</option>
                   </select>
                 </div>
                 
                 {editingSegment.visualType && (
-                  <div>
+                  <div className={editingSegment.visualType === 'text' ? 'md:col-span-2' : ''}>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Contenido visual</label>
-                    <input
-                      type="text"
-                      value={editingSegment.visualContent || ''}
-                      onChange={(e) => setEditingSegment({...editingSegment, visualContent: e.target.value})}
-                      placeholder={
-                        editingSegment.visualType === 'image' 
-                          ? "/ruta-a-imagen.jpg" 
-                          : editingSegment.visualType === 'react'
-                            ? "NombreComponente"
-                            : "Identificador de tabla"
-                      }
-                      className="w-full p-2 border rounded"
-                    />
+                    {editingSegment.visualType === 'text' ? (
+                      <>
+                        <textarea
+                          value={editingSegment.visualContent || ''}
+                          onChange={(e) => setEditingSegment({...editingSegment, visualContent: e.target.value})}
+                          placeholder="Introduce el texto formateado (puedes usar HTML básico)"
+                          rows={5}
+                          className="w-full p-2 border rounded font-mono text-sm"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Puedes usar HTML básico como &lt;strong&gt;, &lt;em&gt;, &lt;ul&gt;, &lt;li&gt;, etc.
+                        </p>
+                        <div className="flex justify-end mt-2">
+                          <button
+                            onClick={() => setShowTextPreview(!showTextPreview)}
+                            className="text-sm text-blue-600 hover:text-blue-800"
+                          >
+                            {showTextPreview ? 'Ocultar previsualización' : 'Mostrar previsualización'}
+                          </button>
+                        </div>
+                        {showTextPreview && renderTextPreview()}
+                      </>
+                    ) : (
+                      <input
+                        type="text"
+                        value={editingSegment.visualContent || ''}
+                        onChange={(e) => setEditingSegment({...editingSegment, visualContent: e.target.value})}
+                        placeholder={
+                          editingSegment.visualType === 'image' 
+                            ? "/ruta-a-imagen.jpg" 
+                            : editingSegment.visualType === 'react'
+                              ? "NombreComponente"
+                              : "Identificador de tabla"
+                        }
+                        className="w-full p-2 border rounded"
+                      />
+                    )}
                   </div>
                 )}
                 
                 {/* Nuevos campos para control de visualización */}
                 {editingSegment.visualType && (
                   <>
-                    <div>
+                    <div className={editingSegment.visualType === 'text' ? 'md:col-span-1' : ''}>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Momento de visualización</label>
                       <select
                         value={editingSegment.visualTiming || 'start'}
@@ -601,7 +677,7 @@ export const demoScript: ScriptSegment[] = liaScript;`;
                     </div>
                     
                     {editingSegment.visualTiming === 'onPhrase' && (
-                      <div>
+                      <div className={editingSegment.visualType === 'text' ? 'md:col-span-1' : ''}>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Frase activadora</label>
                         <input
                           type="text"
@@ -613,7 +689,7 @@ export const demoScript: ScriptSegment[] = liaScript;`;
                       </div>
                     )}
                     
-                    <div>
+                    <div className={editingSegment.visualType === 'text' ? 'md:col-span-1' : ''}>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Retraso antes de mostrar (ms): {editingSegment.visualDelay || 500}
                       </label>
@@ -628,7 +704,7 @@ export const demoScript: ScriptSegment[] = liaScript;`;
                       />
                     </div>
                     
-                    <div>
+                    <div className={editingSegment.visualType === 'text' ? 'md:col-span-1' : ''}>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Duración (ms, 0 = permanente): {editingSegment.visualDuration || 0}
                       </label>

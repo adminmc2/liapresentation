@@ -5,9 +5,9 @@ import { toast } from 'sonner';
 import { Play, Pause, Volume2, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
 import { EnhancedElevenLabsService as ElevenLabsService } from '@/lib/services/enhanced-elevenlabs-service';
 
-// Nueva interfaz para visualizaciones
+// Interfaz para visualizaciones con soporte para diferentes tipos
 interface Visualization {
-  type: string;
+  type: string; // 'image' | 'table' | 'react' | 'text' | 'loading' | 'none'
   content: any;
   isPersistent?: boolean;
 }
@@ -78,7 +78,7 @@ export const VoiceSynthesis: React.FC<VoiceSynthesisProps> = ({
   const textSegmentsRef = useRef<string[]>([]);
   const speechCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Nuevo: para visualizaciones persistentes
+  // Para visualizaciones persistentes
   const [lastPersistentVisualization, setLastPersistentVisualization] = useState<Visualization | null>(null);
   const [activeVisualization, setActiveVisualization] = useState<Visualization | null>(null);
   const [isLoadingVisualization, setIsLoadingVisualization] = useState(false);
@@ -352,7 +352,7 @@ export const VoiceSynthesis: React.FC<VoiceSynthesisProps> = ({
     }
   };
 
-  // Función para determinar qué visualización mostrar
+  // Función para determinar qué visualización mostrar con soporte para tipo 'text'
   const determineVisualizationToShow = () => {
     // Si estamos cargando visualización
     if (isLoadingVisualization) {
@@ -364,16 +364,46 @@ export const VoiceSynthesis: React.FC<VoiceSynthesisProps> = ({
     
     // Si hay una visualización activa explícita, usarla
     if (currentVisualization) {
+      // Para visualizaciones de tipo texto, formatear el contenido correctamente
+      if (currentVisualization.type === 'text') {
+        return {
+          type: 'text',
+          content: typeof currentVisualization.content === 'string' 
+            ? { text: currentVisualization.content } 
+            : currentVisualization.content,
+          isPersistent: currentVisualization.isPersistent
+        };
+      }
       return currentVisualization;
     }
     
     // Si no hay visualización activa pero hay una persistente guardada y no está desactivada
     if (lastPersistentVisualization && !disablePersistentVisualization) {
+      // También comprobar si la persistente es de tipo texto
+      if (lastPersistentVisualization.type === 'text') {
+        return {
+          type: 'text',
+          content: typeof lastPersistentVisualization.content === 'string' 
+            ? { text: lastPersistentVisualization.content } 
+            : lastPersistentVisualization.content,
+          isPersistent: true
+        };
+      }
       return lastPersistentVisualization;
     }
     
     // Si hay visualización por defecto, usarla
     if (defaultVisualization) {
+      // También comprobar si la default es de tipo texto
+      if (defaultVisualization.type === 'text') {
+        return {
+          type: 'text',
+          content: typeof defaultVisualization.content === 'string' 
+            ? { text: defaultVisualization.content } 
+            : defaultVisualization.content,
+          isPersistent: defaultVisualization.isPersistent
+        };
+      }
       return defaultVisualization;
     }
     
@@ -530,10 +560,15 @@ export const VoiceSynthesis: React.FC<VoiceSynthesisProps> = ({
   const renderPersistentIndicator = () => {
     if (!lastPersistentVisualization || disablePersistentVisualization) return null;
     
+    // Personalizar el mensaje según el tipo de visualización
+    const visualizationType = lastPersistentVisualization.type === 'text' 
+      ? 'Texto persistente activo' 
+      : 'Visualización persistente activa';
+    
     return (
       <div className="mt-1 flex items-center">
         <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full mr-2">
-          Visualización persistente activa
+          {visualizationType}
         </span>
         <button
           onClick={clearPersistentVisualizations}
@@ -541,6 +576,30 @@ export const VoiceSynthesis: React.FC<VoiceSynthesisProps> = ({
         >
           Limpiar
         </button>
+      </div>
+    );
+  };
+
+  // Renderizado de visualizaciones de texto en modo de depuración
+  const renderTextVisualizationDebug = () => {
+    if (!currentActiveVisualization || currentActiveVisualization.type !== 'text') return null;
+    
+    // Solo mostrar esto en modo desarrollo/depuración
+    if (process.env.NODE_ENV !== 'development') return null;
+    
+    const textContent = typeof currentActiveVisualization.content === 'string' 
+      ? currentActiveVisualization.content 
+      : currentActiveVisualization.content?.text || '';
+    
+    return (
+      <div className="mt-2 p-2 bg-gray-50 border border-gray-200 rounded text-xs max-w-md opacity-75">
+        <div className="flex justify-between mb-1">
+          <span className="font-medium">Visualización de texto:</span>
+          <span className="text-gray-500">{currentActiveVisualization.isPersistent ? '(persistente)' : ''}</span>
+        </div>
+        <div className="max-h-20 overflow-y-auto">
+          <pre className="whitespace-pre-wrap text-gray-600">{textContent.substring(0, 150)}{textContent.length > 150 ? '...' : ''}</pre>
+        </div>
       </div>
     );
   };
@@ -583,6 +642,9 @@ export const VoiceSynthesis: React.FC<VoiceSynthesisProps> = ({
           <p className="text-blue-800">{currentSpeechSegment}</p>
         </div>
       )}
+      
+      {/* Visualización de depuración para visualizaciones de texto */}
+      {false && renderTextVisualizationDebug()}
     </div>
   );
 };

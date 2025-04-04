@@ -6,8 +6,8 @@ export interface ScriptSegment {
   speaker: 'Armando' | 'LIA'; // Quién habla
   text: string;           // Texto que se dirá/mostrará
   keywords: string[];     // Palabras clave para reconocimiento
-  visualType?: 'image' | 'table' | 'react'; // Tipo de visualización
-  visualContent?: string; // URL de imagen o componente
+  visualType?: 'image' | 'table' | 'react' | 'text'; // Tipo de visualización (añadido 'text')
+  visualContent?: string; // URL de imagen, componente o texto a mostrar
   responseVoice?: boolean; // Si el texto debe ser leído por voz
   isActive?: boolean;     // Si es el segmento activo actualmente
   isCompleted?: boolean;  // Si ya se ha completado este segmento
@@ -22,6 +22,20 @@ export interface ScriptSegment {
 
 // Guión base (primeras tres escenas)
 export const initialLiaScript: ScriptSegment[] = [
+  {
+    id: 'escena0-armando-bienvenida',
+    scene: 0,
+    speaker: 'Armando',
+    text: 'Muchas gracias por estar con nosotros aquí en Praga, es siempre un placer estar aquí en este espacio creado por nosotros.',
+    keywords: ['gracias', 'nosotros', 'Praga', 'placer', 'espacio'],
+    visualType: 'text',
+    visualContent: '<h1 class="text-3xl font-bold text-center text-gray-800 mb-4">BIENVENIDOS Y BIENVENIDAS</h1><p class="text-xl text-center text-gray-600">¡Gracias por estar con nosotros!</p>',
+    responseVoice: false,
+    isActive: false,
+    isCompleted: false,
+    visualPersist: false,
+    visualTiming: 'start'
+  },
   {
     id: 'escena1-lia-saludo',
     scene: 1,

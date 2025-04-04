@@ -35,6 +35,9 @@ export class EnhancedScriptManager {
   private currentSpeechText: string = ''; // Almacena el texto actual que se está hablando
   private phraseCheckInterval: number | null = null;
 
+  // Constante para tipos de visualización soportados
+  private readonly SUPPORTED_VISUALIZATION_TYPES = ['image', 'table', 'react', 'text'];
+
   constructor(initialScript: ScriptSegment[] = demoScript) {
     // Mantiene la compatibilidad con la estructura actual plana
     this.state = {
@@ -48,6 +51,12 @@ export class EnhancedScriptManager {
     
     // Opcionalmente, podríamos convertir los segmentos en escenas estructuradas
     // this.convertToScenes(initialScript);
+  }
+
+  // Método para verificar si un tipo de visualización es válido
+  private isValidVisualizationType(type?: string): boolean {
+    if (!type) return false;
+    return this.SUPPORTED_VISUALIZATION_TYPES.includes(type);
   }
 
   // Método para convertir el array plano a una estructura por escenas
@@ -328,7 +337,7 @@ export class EnhancedScriptManager {
   private checkForTriggerPhrases(): void {
     const currentSegment = this.getCurrentSegment();
     
-    if (!currentSegment || !currentSegment.visualType || !currentSegment.visualContent) {
+    if (!currentSegment || !this.isValidVisualizationType(currentSegment.visualType) || !currentSegment.visualContent) {
       return;
     }
     
@@ -347,13 +356,13 @@ export class EnhancedScriptManager {
 
   // Activar visualización para un segmento específico
   triggerVisualization(segment: ScriptSegment): void {
-    if (!segment.visualType || !segment.visualContent) return;
+    if (!this.isValidVisualizationType(segment.visualType) || !segment.visualContent) return;
     
     // Guardar la visualización actual como última visualización antes de reemplazarla
     // Solo guardamos si no es persistente o si la nueva visualización es explícita
     if (this.state.currentVisualization && 
         (!this.state.currentVisualization.isPersistent || 
-          (segment.visualType && segment.visualContent))) {
+          (this.isValidVisualizationType(segment.visualType) && segment.visualContent))) {
       this.state.lastVisualization = {...this.state.currentVisualization};
     }
     
@@ -370,10 +379,40 @@ export class EnhancedScriptManager {
     this.notifyListeners();
   }
 
+  // Obtener la visualización activa con formato adecuado según el tipo
+  getActiveVisualization(): any {
+    if (this.state.currentVisualization) {
+      const { type, content, isPersistent } = this.state.currentVisualization;
+      
+      if (this.isValidVisualizationType(type)) {
+        // Formato especial para visualizaciones de tipo texto
+        if (type === 'text') {
+          return {
+            type,
+            content: {
+              text: content,  // Asumimos que el contenido es el texto formateado
+              title: '',      // Valor por defecto, podría personalizarse
+            },
+            isPersistent
+          };
+        }
+        
+        // Para otros tipos de visualización
+        return {
+          type,
+          content,
+          isPersistent
+        };
+      }
+    }
+    
+    return null;
+  }
+
   // Nuevo método: Determinar si debemos usar una visualización persistente para el segmento actual
   shouldUsePersistentVisualization(segment: ScriptSegment): boolean {
     // Si el segmento actual tiene visualización explícita, no usar persistente
-    if (segment.visualType && segment.visualContent) {
+    if (this.isValidVisualizationType(segment.visualType) && segment.visualContent) {
       return false;
     }
     
@@ -410,7 +449,7 @@ export class EnhancedScriptManager {
     const shouldUsePersistent = this.shouldUsePersistentVisualization(currentSegment);
     
     // Si el segmento actual tiene su propia visualización, usarla (reemplazará cualquier persistente)
-    if (currentSegment.visualType && currentSegment.visualContent) {
+    if (this.isValidVisualizationType(currentSegment.visualType) && currentSegment.visualContent) {
       // La visualización del segmento se aplicará cuando sea necesario
       return;
     }
@@ -462,8 +501,8 @@ export class EnhancedScriptManager {
       return true;
     }
     
-    // Si el segmento actual no tiene visualización, no mostrar nada
-    if (!segment.visualType || !segment.visualContent) return false;
+    // Si el segmento actual no tiene visualización válida, no mostrar nada
+    if (!this.isValidVisualizationType(segment.visualType) || !segment.visualContent) return false;
     
     switch (segment.visualTiming) {
       case 'start':
@@ -492,6 +531,19 @@ export class EnhancedScriptManager {
   // Verificar si hay una visualización persistente activa
   hasPersistentVisualization(): boolean {
     return !!this.state.currentVisualization?.isPersistent;
+  }
+
+  // Verificar si una visualización es de tipo texto
+  isTextVisualization(): boolean {
+    return this.state.currentVisualization?.type === 'text';
+  }
+
+  // Obtener el contenido de texto formateado de una visualización
+  getFormattedTextContent(): string | null {
+    if (this.state.currentVisualization?.type === 'text') {
+      return this.state.currentVisualization.content;
+    }
+    return null;
   }
 
   // Iniciar seguimiento de frases para detección
